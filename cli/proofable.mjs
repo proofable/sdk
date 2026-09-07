@@ -2586,7 +2586,7 @@ async function runDoctor(options) {
   if (inspected.some(result => result.pluginConflict)) {
     writeCliLine(paint('Registration', 'cyan'));
     writeGuidanceLine(
-      'Plugin and a user MCP config both register neus. Remove the extra user entry; keep one registration.'
+      'The proofable-mcp plugin and a user MCP config both register proofable. Remove the extra user entry; keep one registration.'
     );
     payload.hasErrors = true;
   }
