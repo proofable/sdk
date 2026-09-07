@@ -1,0 +1,289 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
+import { LayoutGrid, ShieldCheck, Search, ExternalLink, Globe, BookOpen, Github } from 'lucide-react';
+import { PROOFABLE_DEFAULT_MARK_URL } from '@proofable/sdk/brand-mark';
+import { claimById, claims, FILTER_CATEGORIES, filterByUiCategory, getInitialDemoProofs } from './claims.js';
+import { applyListScope, filterByQuery } from './viewModel.js';
+import { DetailDrawer } from './components/DetailDrawer.jsx';
+import { OpportunityCard } from './components/OpportunityCard.jsx';
+
+const PENDING_CHECKOUT_KEY = 'proofable.portableProofsDemo.pendingCheckout';
+
+function withEnvUrl(v, d) {
+  if (typeof v === 'string' && v.trim()) return v.trim();
+  if (d === 'origin' && typeof window !== 'undefined') return window.location.origin;
+  if (d === 'checkout' && typeof window === 'undefined') return 'https://proofable.me/verify';
+  if (d === 'checkout' && typeof window !== 'undefined') {
+    return new URL('mock-checkout.html', window.location.origin).href;
+  }
+  if (d === 'api' && typeof window === 'undefined') return 'https://api.proofable.me';
+  if (d === 'api' && typeof window !== 'undefined') return window.location.origin;
+  return 'https://api.proofable.me';
+}
+
+function readHostedCheckoutResult() {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('qHash');
+  if (!id) return null;
+  return { qHash: id };
+}
+
+function removeHostedCheckoutParams() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  let changed = false;
+  for (const key of ['qHash']) {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) {
+    window.history.replaceState({}, '', url.toString());
+  }
+}
+
+function readPendingCheckoutClaimId() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_CHECKOUT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.claimId === 'string' ? parsed.claimId : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function setPendingCheckoutClaimId(claimId) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (claimId) {
+      window.sessionStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify({ claimId }));
+    } else {
+      window.sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+    }
+  } catch (_err) {
+  }
+}
+
+export default function App() {
+  const apiUrl = withEnvUrl(import.meta.env.VITE_PROOFABLE_API_URL, 'api');
+  const hostedCheckoutUrl = withEnvUrl(import.meta.env.VITE_PROOFABLE_HOSTED_CHECKOUT_URL, 'checkout');
+  const [cat, setCat] = useState('all');
+  const listScope = 'all-opp';
+  const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState(null);
+  const [proofs, setProofs] = useState(() => ({ ...getInitialDemoProofs() }));
+
+  useEffect(() => {
+    const result = readHostedCheckoutResult();
+    if (!result?.qHash) return;
+
+    const claimId = readPendingCheckoutClaimId();
+    setPendingCheckoutClaimId(null);
+    removeHostedCheckoutParams();
+
+    if (!claimId || !claimById(claimId)) return;
+    setProofs((s) => ({ ...s, [claimId]: { qHash: result.qHash } }));
+    setSelectedId(claimId);
+  }, []);
+
+  const activeCategory = cat === 'all' ? 'All' : cat;
+
+  const selected = useMemo(() => (selectedId ? claimById(selectedId) : null), [selectedId]);
+
+  const filtered = useMemo(() => {
+    const by = filterByUiCategory(claims, activeCategory);
+    return filterByQuery(by, search);
+  }, [activeCategory, search]);
+
+  const visible = useMemo(
+    () => applyListScope(filtered, listScope, proofs),
+    [filtered, listScope, proofs]
+  );
+
+  const handleVerifiedFromDrawer = useCallback((claimId, id) => {
+    if (!id) return;
+    setPendingCheckoutClaimId(null);
+    setProofs((s) => ({ ...s, [claimId]: { qHash: id } }));
+  }, []);
+
+  const handleDrawerStateChange = useCallback((claimId, state) => {
+    if (state === 'interactive-checkout') {
+      setPendingCheckoutClaimId(claimId);
+    }
+  }, []);
+
+  const onDrawerVerified = useCallback(
+    (id) => {
+      if (selected) handleVerifiedFromDrawer(selected.id, id);
+    },
+    [selected, handleVerifiedFromDrawer]
+  );
+
+  return (
+    <div className="flex min-h-screen bg-bg font-body text-text-p selection:bg-primary/20">
+      <aside
+        className="z-40 flex w-[min(100vw,220px)] flex-shrink-0 flex-col p-6 sm:w-[220px]"
+        style={{ borderRight: '1px solid var(--proofable-border-subtle)', background: 'var(--proofable-bg-rail)' }}
+      >
+        <div className="mb-9 flex items-center gap-2 px-1">
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md">
+            <img src={PROOFABLE_DEFAULT_MARK_URL} width={32} height={32} className="h-7 w-7" alt="" />
+          </div>
+          <span className="font-display text-lg font-bold tracking-tight">Proofable</span>
+        </div>
+
+        <nav className="flex flex-1 flex-col gap-1.5">
+          <button
+            type="button"
+            className="group flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left text-primary"
+            style={{
+              borderColor: 'rgba(var(--proofable-rgb-accent-primary-dim) / 0.3)',
+              background: 'rgba(var(--proofable-rgb-accent-primary) / 0.1)'
+            }}
+          >
+            <span className="flex items-center gap-2.5">
+              <LayoutGrid size={18} className="shrink-0" />
+              <span className="text-[13px] font-medium">Proofs</span>
+            </span>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_8px_rgba(152,192,239,0.7)]" />
+          </button>
+          <a
+            href="https://proofable.me/verify"
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-text-m transition-all hover:bg-white/5 hover:text-text-s"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className="flex items-center gap-2.5">
+              <ShieldCheck size={18} className="shrink-0" />
+              <span className="text-[13px] font-medium">Verify</span>
+            </span>
+            <ExternalLink size={12} className="shrink-0 text-text-m opacity-60" aria-hidden="true" />
+          </a>
+          <a
+            href="https://proofable.me"
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-text-m transition-all hover:bg-white/5 hover:text-text-s"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className="flex items-center gap-2.5">
+              <Globe size={18} className="shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <span className="text-[13px] font-medium">App</span>
+            </span>
+            <ExternalLink size={12} className="shrink-0 text-text-m opacity-60" aria-hidden="true" />
+          </a>
+          <a
+            href="https://docs.proofable.me"
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-text-m transition-all hover:bg-white/5 hover:text-text-s"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className="flex items-center gap-2.5">
+              <BookOpen size={18} className="shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <span className="text-[13px] font-medium">Docs</span>
+            </span>
+            <ExternalLink size={12} className="shrink-0 text-text-m opacity-60" aria-hidden="true" />
+          </a>
+          <a
+            href="https://github.com/proofable/network"
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-text-m transition-all hover:bg-white/5 hover:text-text-s"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className="flex items-center gap-2.5">
+              <Github size={18} className="shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <span className="text-[13px] font-medium">GitHub</span>
+            </span>
+            <ExternalLink size={12} className="shrink-0 text-text-m opacity-60" aria-hidden="true" />
+          </a>
+        </nav>
+      </aside>
+
+      <main className="relative flex-1 overflow-y-auto p-6 sm:p-10 sm:pr-8">
+        <header className="mb-6 flex flex-col justify-between gap-4 sm:mb-10 sm:flex-row sm:items-start">
+          <div className="max-w-2xl">
+            <h1 className="mb-1.5 text-[1.6rem] font-semibold leading-tight tracking-tight sm:text-[1.875rem]">
+              Marketplace
+            </h1>
+            <p className="max-w-xl text-[0.9375rem] leading-relaxed" style={{ color: 'var(--proofable-text-secondary)' }}>
+              One proof for access, rewards, and agents. Works in the browser, on the server, and anywhere you need to show trust.
+            </p>
+          </div>
+          <div className="min-w-0 max-w-full">
+            <div className="group relative">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2"
+                style={{ color: 'var(--proofable-text-muted)' }}
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                type="search"
+                placeholder="Search"
+                className="input-glass h-10 w-full min-w-[8rem] pl-9 pr-3 sm:w-[220px] md:w-[260px]"
+              />
+            </div>
+          </div>
+        </header>
+
+        <div className="mb-6 flex flex-col gap-4 sm:mb-8">
+          <div className="proofable-tabs-list proofable-tabs-list--tight proofable-tabs-list--no-rule" role="tablist" aria-label="Claim categories">
+            {FILTER_CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={c.id === cat}
+                onClick={() => {
+                  setCat(c.id);
+                  if (selectedId) {
+                    const s = claimById(selectedId);
+                    if (s) {
+                      const inCat = c.id === 'all' || c.id === s.uiCategory;
+                      if (!inCat) setSelectedId(null);
+                    }
+                  }
+                }}
+                className={'proofable-tabs-trigger ' + (c.id === cat ? 'proofable-tabs-trigger--active' : '')}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-3">
+          <AnimatePresence initial={false} mode="popLayout">
+            {visible.map((c) => (
+              <OpportunityCard
+                key={c.id}
+                claim={c}
+                qHash={proofs[c.id]?.qHash || null}
+                listScope={listScope}
+                demoHighlight={Boolean(c.demoHighlight)}
+                onSelect={setSelectedId}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
+      </main>
+
+      {selected && (
+        <DetailDrawer
+          key={selected.id}
+          claim={selected}
+          onClose={() => setSelectedId(null)}
+          apiUrl={apiUrl}
+          hostedCheckoutUrl={hostedCheckoutUrl}
+          qHash={proofs[selected.id]?.qHash || null}
+          onVerified={(id) => onDrawerVerified(id)}
+          onStateChange={(state) => handleDrawerStateChange(selected.id, state)}
+        />
+      )}
+    </div>
+  );
+}

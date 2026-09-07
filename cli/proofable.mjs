@@ -1,0 +1,2807 @@
+#!/usr/bin/env node
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  PROOFABLE_MCP_SERVER_NAME,
+  MCP_SERVER_CLEANUP_KEYS,
+  PROOFABLE_MCP_URL,
+  IDE_HOST_LABELS,
+  buildCursorMcpConfig,
+  buildVsCodeMcpConfig,
+  buildMcpHttpConfig
+} from '../mcp-hosts.js';
+import {
+  resolveRuntimeBundleFromMcp,
+  RUNTIME_MOUNT_SCHEMA,
+  normalizeWallet,
+  evaluateMountFileHealth
+} from '../runtime-mount.js';
+import { applyRuntimeBundle, readMountManifest } from '../runtime-adapters.js';
+
+const __cliDir = path.dirname(fileURLToPath(import.meta.url));
+const CLI_PACKAGE_VERSION = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__cliDir, '..', 'package.json'), 'utf8')).version;
+  } catch {
+    return '0.0.0';
+  }
+})();
+
+const PROOFABLE_APP_URL = 'https://proofable.me';
+const PROOFABLE_TOKEN_ENDPOINT = 'https://proofable.me/api/v1/auth/mcp/token';
+const PROOFABLE_DISCONNECT_ENDPOINT = 'https://proofable.me/api/v1/auth/mcp/revoke';
+const PROOFABLE_PROFILE_KEY_ENDPOINT = 'https://api.proofable.me/api/v1/auth/profile-key';
+const SUPPORTED_CLIENTS = ['claude', 'codex', 'cursor', 'vscode'];
+const PROJECT_CLIENTS = ['claude', 'cursor', 'vscode'];
+const HOST_CONNECT_CLIENTS = ['cursor', 'vscode', 'claude'];
+const CODEX_OAUTH_SCOPES = 'neus:core,neus:profile,neus:secrets,offline_access';
+
+// ---------------------------------------------------------------------------
+// OAuth token store (~/.proofable/mcp-tokens.json , gitignored user-scope cache)
+// ---------------------------------------------------------------------------
+// Holds the refresh token returned alongside the short-lived OAuth access
+// token. Powers the `proofable refresh` escape hatch: when an IDE MCP client's
+// own OAuth refresh has a bug, `proofable refresh` rotates the access token in one
+// command instead of a full browser re-auth. The primary refresh path is the
+// IDE's native OAuth client; a URL-only mcp.json config lets the host run
+// discovery, PKCE, and silent refresh itself.
+//
+// Never committed (lives under ~/.proofable/). Never written into mcp.json. Refresh
+// tokens rotate on each use; `proofable refresh` is a user-run fallback, not a
+// background daemon.
+const PROOFABLE_HOME_DIR = path.join(os.homedir(), '.proofable');
+const PROOFABLE_TOKEN_STORE_PATH = path.join(PROOFABLE_HOME_DIR, 'mcp-tokens.json');
+const PROOFABLE_OAUTH_CLIENT_ID = 'proofable-cli';
+// RFC 9207 , the expected issuer returned in the authorization response `iss`
+// parameter. Matches the `issuer` field in /.well-known/oauth-authorization-server.
+const PROOFABLE_OAUTH_ISSUER = 'https://proofable.me';
+const PROOFABLE_MCP_RESOURCE = 'https://mcp.proofable.me/mcp';
+
+function readTokenStore() {
+  try {
+    const raw = fs.readFileSync(PROOFABLE_TOKEN_STORE_PATH, 'utf8').trim();
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeTokenStore(store) {
+  if (!store || typeof store !== 'object') return;
+  try {
+    fs.mkdirSync(PROOFABLE_HOME_DIR, { recursive: true });
+    fs.writeFileSync(PROOFABLE_TOKEN_STORE_PATH, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  } catch {
+    // Non-blocking: refresh fallback is insurance, not the primary auth path.
+  }
+}
+
+function clearTokenStore() {
+  try {
+    fs.unlinkSync(PROOFABLE_TOKEN_STORE_PATH);
+  } catch {
+    // Non-blocking: file may not exist.
+  }
+}
+
+function tokenExpiresAt(expiresIn) {
+  const seconds = Number(expiresIn);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Date.now() + seconds * 1000;
+}
+
+function isTokenExpired(store) {
+  if (!store?.expiresAt) return true;
+  return Date.now() >= (store.expiresAt - 60_000);
+}
+
+function persistOAuthTokens(tokenJson, clientId, resource) {
+  const refreshToken = String(tokenJson?.refresh_token || '').trim();
+  if (!refreshToken) return;
+  writeTokenStore({
+    accessToken: String(tokenJson?.access_token || '').trim(),
+    refreshToken,
+    expiresAt: tokenExpiresAt(tokenJson?.expires_in) || (Date.now() + 3600_000),
+    clientId: clientId || PROOFABLE_OAUTH_CLIENT_ID,
+    resource: resource || PROOFABLE_MCP_RESOURCE,
+    scope: String(tokenJson?.scope || '').trim(),
+    updatedAt: Date.now()
+  });
+}
+
+async function refreshOAuthToken() {
+  const store = readTokenStore();
+  if (!store?.refreshToken) {
+    throw new Error('No stored OAuth refresh token. Run `npx -y -p @proofable/sdk proofable auth --oauth` first.');
+  }
+  const params = new URLSearchParams();
+  params.set('grant_type', 'refresh_token');
+  params.set('refresh_token', store.refreshToken);
+  params.set('client_id', store.clientId || PROOFABLE_OAUTH_CLIENT_ID);
+  params.set('resource', store.resource || PROOFABLE_MCP_RESOURCE);
+  const resp = await fetch(PROOFABLE_TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: params.toString(),
+    signal: AbortSignal.timeout(15_000)
+  });
+  const tokenJson = await resp.json();
+  if (!tokenJson.access_token) {
+    if (tokenJson.error === 'invalid_grant') clearTokenStore();
+    throw new Error(tokenJson.error_description || tokenJson.error || 'Token refresh failed');
+  }
+  persistOAuthTokens(tokenJson, store.clientId, store.resource);
+  return {
+    accessToken: String(tokenJson.access_token).trim(),
+    expiresAt: tokenExpiresAt(tokenJson.expires_in) || (Date.now() + 3600_000)
+  };
+}
+
+const ansi = {
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  bold: '\x1b[1m'
+};
+
+function isTruthyEnv(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function resolveColorEnabled() {
+  if (isTruthyEnv(process.env.NO_COLOR)) return false;
+  if (process.env.TERM === 'dumb') return false;
+  return true;
+}
+
+function paint(value, color) {
+  if (!resolveColorEnabled()) return String(value);
+  return `${ansi[color] || ''}${value}${ansi.reset}`;
+}
+
+function terminalColumns() {
+  const cols = Number(process.stderr.columns || process.stdout.columns || 0);
+  if (Number.isFinite(cols) && cols >= 40) return cols;
+  return 80;
+}
+
+function truncateDetail(text) {
+  const raw = String(text || '');
+  const max = Math.max(24, terminalColumns() - 18);
+  if (raw.length <= max) return raw;
+  return `${raw.slice(0, Math.max(0, max - 3))}...`;
+}
+
+// Shorten a wallet/DID for human display: 0x1234…abcd for EVM, truncated base58
+// for Solana, and a pass-through for DIDs and unknown formats.
+function shortWallet(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('0x') && raw.length >= 10) {
+    return `${raw.slice(0, 6)}…${raw.slice(-4)}`;
+  }
+  if (raw.startsWith('did:')) {
+    return raw.length > 24 ? `${raw.slice(0, 21)}…` : raw;
+  }
+  if (raw.length > 16) {
+    return `${raw.slice(0, 8)}…${raw.slice(-4)}`;
+  }
+  return raw;
+}
+
+function cliSymbols() {
+  return { ok: 'ok', warn: '!', next: '>', skip: '-' };
+}
+
+function writeCliLine(line) {
+  process.stderr.write(`${line}\n`);
+}
+
+let cliBannerEmitted = false;
+
+function readCliVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__cliDir, '..', 'package.json'), 'utf8'));
+    return String(pkg.version || '0.0.0').trim();
+  } catch {
+    return '0.0.0';
+  }
+}
+
+function shouldEmitCliBanner(cliOptions = {}) {
+  if (cliBannerEmitted) return false;
+  if (cliOptions.json) return false;
+  if (!process.stderr.isTTY) return false;
+  return true;
+}
+
+function emitCliBanner(cliOptions = {}) {
+  if (!shouldEmitCliBanner(cliOptions)) return;
+  const version = readCliVersion();
+  const title = paint('Proofable', 'green');
+  const meta = paint(`v${version}`, 'dim');
+  writeCliLine('');
+  writeCliLine(`  ${title}  ${meta}`);
+  writeCliLine('');
+  cliBannerEmitted = true;
+}
+
+function logStep(kind, label, detail = '') {
+  const symbols = cliSymbols();
+  const iconKey = kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : kind === 'next' ? 'next' : 'skip';
+  const iconColor = kind === 'ok' ? 'green' : kind === 'warn' ? 'yellow' : kind === 'next' ? 'cyan' : 'dim';
+  const iconCell = symbols[iconKey].padEnd(2);
+  const icon = paint(iconCell, iconColor);
+  const name = paint(String(label).padEnd(10), 'cyan');
+  const suffix = detail ? `  ${paint(truncateDetail(detail), 'dim')}` : '';
+  writeCliLine(`  ${icon} ${name}${suffix}`);
+}
+
+function writeGuidanceLine(text) {
+  writeCliLine(`  ${paint('-', 'dim')} ${text}`);
+}
+
+function describeClientResult(command, result) {
+  if (result.skippedReason) return result.skippedReason;
+  if (result.deferredToPlugin) {
+    return result.removedUserRegistration
+      ? 'proofable-mcp plugin owns MCP; removed the leftover user entry'
+      : 'proofable-mcp plugin owns MCP registration';
+  }
+  if (result.dryRun && result.changed) {
+    if (result.client === 'codex') {
+      return `would update ${result.targetPath || '~/.codex/config.toml'}`;
+    }
+    return 'would update';
+  }
+  if (result.client === 'codex' && result.configured) {
+    if (command === 'auth') {
+      return result.authConfigured ? 'Codex OAuth complete' : 'Codex MCP config ready';
+    }
+    return `Codex MCP config: ${result.targetPath || '~/.codex/config.toml'}`;
+  }
+  if (result.changed) return 'updated';
+  if (result.authConfigured) return 'signed in';
+  if (result.configured && isHostConnectClient(result.client) && result.authConfigured === false) {
+    return 'registered. Sign in in the host MCP panel';
+  }
+  if (result.configured) return 'configured. Sign in to connect';
+  return 'not configured';
+}
+
+function printBuilderGuidance(command, results) {
+  if (!['setup', 'auth', 'doctor'].includes(command)) return;
+  const ok = results.filter(result => result.configured && !result.error);
+  const label = (client) => IDE_HOST_LABELS[client] || client;
+  writeCliLine('');
+  writeCliLine(paint('Next steps', 'cyan'));
+  writeGuidanceLine('Run `npx -y -p @proofable/sdk proofable examples` for assistant prompts.');
+  if (ok.some(result => result.client === 'codex')) {
+    writeGuidanceLine('Codex OAuth: `npx -y -p @proofable/sdk proofable auth --client codex` or `codex mcp login proofable`.');
+  }
+  if (ok.length > 0) {
+    writeGuidanceLine(`Proofable MCP registered for ${ok.map(result => label(result.client)).join(', ')}.`);
+  }
+  writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
+}
+
+function selectedClientNames(results) {
+  return results.map(result => result.client).filter(Boolean);
+}
+
+function preferredSetupCommand(results) {
+  const clients = selectedClientNames(results);
+  const suffix = clients.length === 1 ? ` --client ${clients[0]}` : '';
+  return `npx -y -p @proofable/sdk proofable setup${suffix}`;
+}
+
+function isHostConnectClient(client) {
+  return HOST_CONNECT_CLIENTS.includes(client);
+}
+
+function hostConnectHint(clients) {
+  const unique = [...new Set((clients || []).filter(Boolean))];
+  const hasCodex = unique.includes('codex');
+  const hostClients = unique.filter(isHostConnectClient);
+  const codexHint = ' For Codex, run `npx -y -p @proofable/sdk proofable auth --client codex`.';
+  if (unique.length === 1 && unique[0] === 'codex') {
+    return {
+      hint: 'Run `npx -y -p @proofable/sdk proofable auth --client codex` to sign in through Codex.',
+      nextCommand: 'npx -y -p @proofable/sdk proofable auth --client codex'
+    };
+  }
+  if (hostClients.length) {
+    return {
+      hint:
+        'Click Connect on proofable in the host MCP panel. If the host shows Logout and Unauthorized, click Logout, then Connect.' +
+        (hasCodex ? codexHint : ''),
+      nextCommand: null
+    };
+  }
+  if (hasCodex) {
+    return {
+      hint: 'Run `npx -y -p @proofable/sdk proofable auth --client codex` to sign in through Codex.',
+      nextCommand: 'npx -y -p @proofable/sdk proofable auth --client codex'
+    };
+  }
+  return {
+    hint: 'Run `npx -y -p @proofable/sdk proofable auth --oauth` only for the CLI token store.',
+    nextCommand: 'npx -y -p @proofable/sdk proofable auth --oauth'
+  };
+}
+
+function printStatusGuidance(results) {
+  writeCliLine('');
+  writeCliLine(paint('MCP endpoint', 'cyan'));
+  writeGuidanceLine(PROOFABLE_MCP_URL);
+  writeCliLine(paint('Profile connection', 'cyan'));
+  if (results.some(result => result.configured)) {
+    writeGuidanceLine(
+      'Saved config found. Run `npx -y -p @proofable/sdk proofable doctor --live` to confirm the connection.'
+    );
+  } else {
+    writeGuidanceLine(`No selected MCP host is configured yet. Run \`${preferredSetupCommand(results)}\`.`);
+  }
+}
+
+function printHostAuthIntro(host, cliOptions = {}) {
+  if (cliOptions.json) return;
+  emitCliBanner(cliOptions);
+  writeCliLine(paint('auth', 'green'));
+  if (host === 'codex') {
+    logStep('next', 'codex', 'starting Codex-owned MCP OAuth');
+    logStep('next', 'command', 'codex mcp login proofable');
+    writeCliLine('');
+  }
+}
+
+function printFlowSummary(command, scope, results, { nextStep = '', cliOptions = {} } = {}) {
+  emitCliBanner(cliOptions);
+  writeCliLine(paint(String(command), 'green'));
+
+  for (const result of results) {
+    const client = result.client;
+    if (result.error) {
+      logStep('warn', client, result.error);
+      continue;
+    }
+    if (result.configured) {
+      const detail = describeClientResult(command, result);
+      logStep('ok', client, detail);
+      continue;
+    }
+    if (result.authConfigured === null) {
+      logStep('skip', client, 'not installed');
+      continue;
+    }
+    logStep('skip', client, 'not configured');
+  }
+
+  if (nextStep) {
+    writeCliLine('');
+    logStep('next', 'next', nextStep);
+  }
+  if (command === 'status') {
+    printStatusGuidance(results);
+  }
+  printBuilderGuidance(command, results);
+  writeCliLine('');
+}
+
+function printAuthBrowserIntro(authUrl, cliOptions = {}) {
+  emitCliBanner(cliOptions);
+  writeCliLine(paint('auth', 'green'));
+  logStep('next', 'sign-in', 'opens in your browser');
+  writeCliLine('');
+  writeCliLine(`  ${paint(truncateDetail(authUrl), 'dim')}`);
+  writeCliLine('');
+}
+
+function parseBearerHeader(value) {
+  const raw = String(value || '').trim();
+  if (!raw.toLowerCase().startsWith('bearer ')) return '';
+  return raw.slice(7).trim();
+}
+
+function serverEntry(servers) {
+  return servers?.[PROOFABLE_MCP_SERVER_NAME];
+}
+
+function readCursorBearer(scope, cwd) {
+  const targetPath = cursorConfigPath(scope, cwd);
+  if (!fileExists(targetPath)) return '';
+  const doc = readJsonFile(targetPath, {});
+  return parseBearerHeader(serverEntry(doc.mcpServers)?.headers?.Authorization);
+}
+
+function readVsCodeBearer(scope, cwd) {
+  const targetPath = vscodeConfigPath(scope, cwd);
+  if (!fileExists(targetPath)) return '';
+  const doc = readJsonFile(targetPath, {});
+  return parseBearerHeader(serverEntry(doc.servers)?.headers?.Authorization);
+}
+
+function readClaudeBearer(scope, cwd) {
+  if (scope === 'project') {
+    const targetPath = claudeProjectConfigPath(cwd);
+    if (!fileExists(targetPath)) return '';
+    const doc = readJsonFile(targetPath, {});
+    return parseBearerHeader(serverEntry(doc.mcpServers)?.headers?.Authorization);
+  }
+  if (!commandExists('claude')) return '';
+  const result = spawnSync('claude', ['mcp', 'list'], {
+    encoding: 'utf8',
+    env: process.env
+  });
+  if (result.status !== 0) return '';
+  const lines = String(result.stdout || '').split(/\r?\n/);
+  if (!lines.includes(PROOFABLE_MCP_SERVER_NAME)) return '';
+  const statePath = process.env.PROOFABLE_TEST_CLAUDE_STATE;
+  if (statePath && fileExists(statePath)) {
+    const state = readJsonFile(statePath, { servers: {} });
+    const headers = serverEntry(state.servers)?.headers || [];
+    const authLine = headers.find(line => String(line).toLowerCase().startsWith('authorization:'));
+    if (authLine) {
+      return parseBearerHeader(authLine.replace(/^authorization:\s*/i, ''));
+    }
+  }
+  return '';
+}
+
+function readInstalledAccessKey(scope, cwd) {
+  for (const reader of [readCursorBearer, readVsCodeBearer, readClaudeBearer]) {
+    const token = reader(scope, cwd);
+    if (token) return token;
+  }
+  return '';
+}
+
+function envAccessKey() {
+  return String(process.env.PROOFABLE_ACCESS_KEY || '').trim();
+}
+
+/** --access-key flag, else PROOFABLE_ACCESS_KEY from the environment, else browser sign-in. */
+function resolveAccessKey(options) {
+  if (options?.oauth) return '';
+  const explicit = String(options.accessKey || '').trim();
+  if (explicit) return explicit;
+  return envAccessKey();
+}
+
+/** --access-key, IDE MCP config, then PROOFABLE_ACCESS_KEY from the environment. */
+function resolveLiveCredential(options, scope, cwd) {
+  const explicit = String(options.accessKey || '').trim();
+  if (explicit) return { key: explicit, source: 'flag' };
+  const installed = readInstalledAccessKey(scope, cwd);
+  if (installed) return { key: installed, source: 'mcp-header' };
+  // Browser OAuth stores the access token in ~/.proofable/mcp-tokens.json (not in
+  // the host MCP config, which is URL-only for host-owned OAuth). Doctor may
+  // probe with that CLI session; it is not the host MCP session.
+  const store = readTokenStore();
+  if (store?.accessToken && !isTokenExpired(store)) {
+    return { key: store.accessToken, source: 'cli-store' };
+  }
+  if (options?.oauth) return { key: '', source: 'none' };
+  const envKey = envAccessKey();
+  if (envKey) return { key: envKey, source: 'env' };
+  return { key: '', source: 'none' };
+}
+
+function resolveLiveAccessKey(options, scope, cwd) {
+  return resolveLiveCredential(options, scope, cwd).key;
+}
+
+function resolveAuthMethod(options, accessKey) {
+  if (!accessKey) return 'browser';
+  if (String(options.accessKey || '').trim()) return 'access-key';
+  return 'env-key';
+}
+
+function fileExists(targetPath) {
+  try {
+    fs.accessSync(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function jsonStringify(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function readJsonFile(targetPath, fallback) {
+  if (!fileExists(targetPath)) return fallback;
+  const raw = fs.readFileSync(targetPath, 'utf8').trim();
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : fallback;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Invalid JSON in ${targetPath}`);
+    }
+    throw error;
+  }
+}
+
+function writeJsonFile(targetPath, nextValue, dryRun) {
+  const serialized = jsonStringify(nextValue);
+  const hadExistingFile = fileExists(targetPath);
+  const previous = hadExistingFile ? fs.readFileSync(targetPath, 'utf8') : null;
+  const changed = previous !== serialized;
+  const backupPath = hadExistingFile && changed ? `${targetPath}.bak` : null;
+
+  if (!dryRun && changed) {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    if (backupPath) {
+      fs.copyFileSync(targetPath, backupPath);
+    }
+    fs.writeFileSync(targetPath, serialized, 'utf8');
+  }
+
+  return {
+    changed,
+    targetPath,
+    backupPath,
+    dryRun
+  };
+}
+
+function directoryDigest(targetPath) {
+  if (!fileExists(targetPath)) return null;
+  const files = [];
+  const visit = current => {
+    for (const entry of fs
+      .readdirSync(current, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) visit(fullPath);
+      else if (entry.isFile()) {
+        files.push(
+          `${path.relative(targetPath, fullPath).replaceAll(path.sep, '/')}\0${fs.readFileSync(fullPath, 'utf8')}`
+        );
+      }
+    }
+  };
+  visit(targetPath);
+  return sha256(files.join('\0'));
+}
+
+function trustSkillTargets(clients) {
+  const targets = [];
+  if (clients.some(client => ['cursor', 'codex', 'vscode'].includes(client))) {
+    const pluginHosts = clients.filter(
+      client => ['cursor', 'codex'].includes(client) && hostPluginBundlesTrustSkill(client)
+    );
+    const cliHosts = clients.filter(
+      client => !pluginHosts.includes(client) && ['cursor', 'codex', 'vscode'].includes(client)
+    );
+    if (cliHosts.length) {
+      targets.push({
+        hosts: cliHosts,
+        targetPath: path.join(os.homedir(), '.agents', 'skills', 'proofable-trust-workflow')
+      });
+    }
+    if (pluginHosts.length) {
+      targets.push({
+        hosts: pluginHosts,
+        targetPath: null,
+        deferredToPlugin: true
+      });
+    }
+  }
+  if (clients.includes('claude')) {
+    if (hostPluginBundlesTrustSkill('claude')) {
+      targets.push({
+        hosts: ['claude'],
+        targetPath: null,
+        deferredToPlugin: true
+      });
+    } else {
+      targets.push({
+        hosts: ['claude'],
+        targetPath: path.join(os.homedir(), '.claude', 'skills', 'proofable-trust-workflow')
+      });
+    }
+  }
+  return targets;
+}
+
+function installTrustSkill(clients, dryRun) {
+  const sourcePath = path.join(__cliDir, '..', 'skills', 'proofable-trust-workflow');
+  if (!fileExists(path.join(sourcePath, 'SKILL.md'))) {
+    throw new Error(`Packaged Proofable trust skill is missing: ${sourcePath}`);
+  }
+  const sourceDigest = directoryDigest(sourcePath);
+  return trustSkillTargets(clients).map(({ hosts, targetPath, deferredToPlugin }) => {
+    if (deferredToPlugin) {
+      return {
+        name: 'proofable-trust-workflow',
+        hosts,
+        installed: true,
+        changed: false,
+        targetPath: null,
+        deferredToPlugin: true,
+        backupPath: null,
+        version: CLI_PACKAGE_VERSION,
+        sha256: sourceDigest,
+        dryRun
+      };
+    }
+    const changed = directoryDigest(targetPath) !== sourceDigest;
+    const backupPath =
+      changed && fileExists(targetPath) ? `${targetPath}.bak-${Date.now()}` : null;
+    if (!dryRun && changed) {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      if (backupPath) fs.renameSync(targetPath, backupPath);
+      try {
+        fs.cpSync(sourcePath, targetPath, { recursive: true });
+      } catch (error) {
+        if (backupPath && fileExists(backupPath) && !fileExists(targetPath)) {
+          fs.renameSync(backupPath, targetPath);
+        }
+        throw error;
+      }
+    }
+    return {
+      name: 'proofable-trust-workflow',
+      hosts,
+      installed: true,
+      changed,
+      targetPath: portablePath(targetPath),
+      deferredToPlugin: false,
+      backupPath: backupPath ? portablePath(backupPath) : null,
+      version: CLI_PACKAGE_VERSION,
+      sha256: sourceDigest,
+      dryRun
+    };
+  });
+}
+
+function inspectTrustSkill(clients) {
+  const sourcePath = path.join(__cliDir, '..', 'skills', 'proofable-trust-workflow');
+  const sourceDigest = directoryDigest(sourcePath);
+  return trustSkillTargets(clients).map(({ hosts, targetPath, deferredToPlugin }) => {
+    if (deferredToPlugin) {
+      return {
+        name: 'proofable-trust-workflow',
+        hosts,
+        installed: true,
+        current: true,
+        targetPath: null,
+        deferredToPlugin: true,
+        version: CLI_PACKAGE_VERSION,
+        sha256: sourceDigest
+      };
+    }
+    const installedDigest = directoryDigest(targetPath);
+    return {
+      name: 'proofable-trust-workflow',
+      hosts,
+      installed: Boolean(installedDigest),
+      current: Boolean(installedDigest && sourceDigest && installedDigest === sourceDigest),
+      targetPath: portablePath(targetPath),
+      deferredToPlugin: false,
+      version: CLI_PACKAGE_VERSION,
+      sha256: installedDigest
+    };
+  });
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function portablePath(targetPath) {
+  const homeDir = os.homedir();
+  const cwd = process.cwd();
+  const normalized = path.resolve(targetPath);
+  const homeRelative = path.relative(homeDir, normalized);
+  if (homeRelative && !homeRelative.startsWith('..') && !path.isAbsolute(homeRelative)) {
+    return `~/${homeRelative.replaceAll(path.sep, '/')}`;
+  }
+  const cwdRelative = path.relative(cwd, normalized);
+  if (cwdRelative && !cwdRelative.startsWith('..') && !path.isAbsolute(cwdRelative)) {
+    return cwdRelative.replaceAll(path.sep, '/');
+  }
+  return normalized.replaceAll(path.sep, '/');
+}
+
+function resolveCodexAppBinary() {
+  if (process.platform !== 'win32') return null;
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const binRoot = path.join(localAppData, 'OpenAI', 'Codex', 'bin');
+  if (!fileExists(binRoot)) return null;
+  try {
+    return (
+      fs
+        .readdirSync(binRoot, { withFileTypes: true })
+        .filter(entry => entry.isDirectory())
+        .map(entry => path.join(binRoot, entry.name, 'codex.exe'))
+        .filter(fileExists)
+        .map(candidate => ({ candidate, modified: fs.statSync(candidate).mtimeMs }))
+        .sort((a, b) => b.modified - a.modified)[0]?.candidate || null
+    );
+  } catch {
+    return null;
+  }
+}
+
+function resolveCommand(command) {
+  if (command === 'codex') {
+    const appBinary = resolveCodexAppBinary();
+    if (appBinary) return appBinary;
+  }
+  const checker = process.platform === 'win32' ? 'where' : 'which';
+  const result = spawnSync(checker, [command], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  if (result.status !== 0) return null;
+  const firstMatch = result.stdout
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(Boolean);
+  return firstMatch || null;
+}
+
+function runCommand(command, args, cwd, tolerateFailure = false, timeout = 30_000) {
+  const resolvedCommand = resolveCommand(command) || command;
+  const isWindowsScript = process.platform === 'win32' && /\.(cmd|bat)$/i.test(resolvedCommand);
+  const result = isWindowsScript
+    ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', resolvedCommand, ...args], {
+         cwd,
+         encoding: 'utf8',
+         stdio: ['ignore', 'pipe', 'pipe'],
+         timeout
+       })
+     : spawnSync(resolvedCommand, args, {
+         cwd,
+         encoding: 'utf8',
+         stdio: ['ignore', 'pipe', 'pipe'],
+         timeout
+       });
+
+  if (result.error && !tolerateFailure) {
+    throw result.error;
+  }
+
+  if (result.status !== 0 && !tolerateFailure) {
+    const detail =
+      [result.stderr, result.stdout].find(value => typeof value === 'string' && value.trim()) || '';
+    throw new Error(detail.trim() || `Command failed: ${command} ${args.join(' ')}`);
+  }
+
+  return result;
+}
+
+function commandExists(command) {
+  return Boolean(resolveCommand(command));
+}
+
+function cursorInstalled() {
+  const homeDir = os.homedir();
+  const appData = process.env.APPDATA || '';
+  const localAppData = process.env.LOCALAPPDATA || '';
+  return [
+    path.join(homeDir, '.cursor'),
+    path.join(appData, 'Cursor'),
+    path.join(localAppData, 'Programs', 'Cursor', 'Cursor.exe')
+  ].some(fileExists);
+}
+
+function listImmediateDirs(dir) {
+  if (!fileExists(dir)) return [];
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isDirectory());
+  } catch {
+    return [];
+  }
+}
+
+function addPluginDir(dirs, pluginRoot) {
+  if (!fileExists(pluginRoot)) return;
+  const hashes = listImmediateDirs(pluginRoot);
+  if (hashes.length === 0) {
+    dirs.push(pluginRoot);
+    return;
+  }
+  for (const hash of hashes) {
+    dirs.push(path.join(pluginRoot, hash.name));
+  }
+}
+
+function cursorPluginDirs() {
+  const homeDir = os.homedir();
+  const dirs = [];
+  const cache = path.join(homeDir, '.cursor', 'plugins', 'cache');
+  for (const publisher of listImmediateDirs(cache)) {
+    const publisherPath = path.join(cache, publisher.name);
+    if (publisher.name === 'proofable-mcp') {
+      addPluginDir(dirs, publisherPath);
+      continue;
+    }
+    addPluginDir(dirs, path.join(publisherPath, 'proofable-mcp'));
+  }
+  const walkMarketplaces = (current, depth) => {
+    if (depth > 6) return;
+    for (const entry of listImmediateDirs(current)) {
+      const full = path.join(current, entry.name);
+      if (entry.name === 'proofable-mcp' && path.basename(path.dirname(full)) === 'plugins') {
+        dirs.push(full);
+        continue;
+      }
+      walkMarketplaces(full, depth + 1);
+    }
+  };
+  walkMarketplaces(path.join(homeDir, '.cursor', 'plugins', 'marketplaces'), 0);
+  return dirs;
+}
+
+function pluginDirBundlesTrustSkill(pluginDir) {
+  return fileExists(path.join(pluginDir, 'skills', 'proofable-trust-workflow', 'SKILL.md'));
+}
+
+function pluginDirRegistersMcp(pluginDir) {
+  for (const name of ['mcp.json', '.mcp.json']) {
+    const target = path.join(pluginDir, name);
+    if (!fileExists(target)) continue;
+    try {
+      const doc = JSON.parse(fs.readFileSync(target, 'utf8'));
+      const servers =
+        doc?.mcpServers && typeof doc.mcpServers === 'object' && !Array.isArray(doc.mcpServers)
+          ? doc.mcpServers
+          : doc;
+      // Match on the URL, not the key: a plugin cached before the rename still
+      // registers the same endpoint under its own name.
+      if (
+        Object.values(servers || {}).some(
+          (entry) => typeof entry?.url === 'string' && entry.url.includes('mcp.proofable.me'),
+        )
+      ) {
+        return true;
+      }
+    } catch {
+      // Ignore unreadable plugin MCP files.
+    }
+  }
+  return false;
+}
+
+function hostPluginRegistersMcp(host) {
+  // Defer CLI writes only when a plugin already ships mcp.json.
+  // Claude and Codex plugins are skill-only; the CLI remains their registrar.
+  if (host !== 'cursor') return false;
+  return cursorPluginDirs().some(pluginDirRegistersMcp);
+}
+
+// Detect whether the proofable-mcp plugin is installed for a given host and bundles the
+// trust-workflow skill in its skills/ directory. Returns true when the plugin-owned
+// skill is present so the CLI can skip writing a user-level copy (avoids duplicates).
+function hostPluginBundlesTrustSkill(host) {
+  const homeDir = os.homedir();
+  if (host === 'cursor') {
+    return cursorPluginDirs().some(pluginDirBundlesTrustSkill);
+  }
+  let cacheRoot;
+  if (host === 'claude') {
+    cacheRoot = path.join(homeDir, '.claude', 'plugins', 'cache');
+  } else if (host === 'codex') {
+    cacheRoot = path.join(homeDir, '.codex', 'plugins', 'cache');
+  } else {
+    return false;
+  }
+  if (!fileExists(cacheRoot)) return false;
+  try {
+    return fs
+      .readdirSync(cacheRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .some(entry =>
+        fileExists(
+          path.join(cacheRoot, entry.name, 'skills', 'proofable-trust-workflow', 'SKILL.md')
+        )
+      );
+  } catch {
+    return false;
+  }
+}
+
+function defaultUserClients() {
+  const detected = [];
+  if (commandExists('claude')) detected.push('claude');
+  if (commandExists('codex')) detected.push('codex');
+  if (cursorInstalled()) detected.push('cursor');
+  if (commandExists('code') || fileExists(path.join(process.env.APPDATA || '', 'Code')))
+    detected.push('vscode');
+  return detected;
+}
+
+function parseClientOption(raw) {
+  return String(raw || '')
+    .split(',')
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseArgs(argv) {
+  if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
+    return {
+      command: 'help',
+      options: {
+        accessKey: '',
+        clients: [],
+        live: false,
+        json: false,
+        dryRun: false,
+        project: false
+      }
+    };
+  }
+
+  const command = argv[0];
+  const options = {
+    accessKey: '',
+    clients: [],
+    live: false,
+    json: false,
+    dryRun: false,
+    project: false,
+    oauth: false,
+    agent: '',
+    apply: '',
+    agentTarget: ''
+  };
+
+  for (let index = 1; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === '--json') {
+      options.json = true;
+      continue;
+    }
+    if (token === '--dry-run') {
+      options.dryRun = true;
+      continue;
+    }
+    if (token === '--live') {
+      options.live = true;
+      continue;
+    }
+    if (token === '--project') {
+      options.project = true;
+      continue;
+    }
+    if (token === '--client') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--client requires a value');
+      options.clients.push(...parseClientOption(value));
+      index += 1;
+      continue;
+    }
+    if (token === '--access-key') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--access-key requires a value');
+      options.accessKey = value;
+      index += 1;
+      continue;
+    }
+    if (token === '--oauth') {
+      options.oauth = true;
+      continue;
+    }
+    if (token === '--agent') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--agent requires a value');
+      options.agent = value.trim();
+      index += 1;
+      continue;
+    }
+    if (token === '--apply') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--apply requires a value (cursor, claude, or codex)');
+      options.apply = value.trim().toLowerCase();
+      index += 1;
+      continue;
+    }
+    if (command === 'mount' && !token.startsWith('-') && !options.agentTarget) {
+      options.agentTarget = token;
+      continue;
+    }
+    if (token === '--help' || token === '-h') {
+      return { command: 'help', options };
+    }
+    throw new Error(`Unknown option: ${token}`);
+  }
+
+  options.accessKey = String(options.accessKey || '').trim();
+  options.clients = [...new Set(options.clients)];
+
+  return { command, options };
+}
+
+function printUsage(exitCode = 0) {
+  const lines = [
+    'Usage: proofable <command> [options]',
+    '       node cli/proofable.mjs <command>   (local development without a global install)',
+    '',
+    'Commands:',
+    '  setup         Configure hosted Proofable MCP for supported clients',
+    '  auth          Sign in (host Connect, or --oauth for the CLI store)',
+    '  refresh       Rotate the stored OAuth token using the saved refresh token (requires `proofable auth --oauth` first)',
+    '  disconnect    Disconnect Proofable MCP (revoke the stored OAuth token or access key)',
+    '  status        Show current Proofable MCP setup',
+    '  examples      Show assistant prompts to try after install',
+    '  doctor        Deep check: config status, profile connection, and live MCP context',
+    '  mount <id>    Connect a Trusted Agent to a project or runtime',
+    '  help          Show this message',
+    '',
+    'Options:',
+    '  --client <name[,name]>   Limit setup to claude, codex, cursor, or vscode',
+    '  --project                Write shared project config instead of user config',
+    '  --access-key <npk_...>   Override profile access key (else uses PROOFABLE_ACCESS_KEY if set)',
+    '  --oauth                  Force browser OAuth (ignore PROOFABLE_ACCESS_KEY in the environment; stores the refresh token that `proofable refresh` uses)',
+    '  --live                   Run live MCP checks (uses IDE credential or --access-key)',
+    '  --agent <agentId>        Agent id for mount (also accepted positionally: `proofable mount <agentId>`)',
+    '  --apply <cursor|claude|codex>  Write mounted agent rules to the current project',
+    '  --json                   Print JSON output',
+    '  --dry-run                Preview changes without writing files'
+  ];
+  const stream = exitCode === 0 ? process.stdout : process.stderr;
+  stream.write(`${lines.join('\n')}\n`);
+  process.exit(exitCode);
+}
+
+function assertValidClients(clients) {
+  for (const client of clients) {
+    if (!SUPPORTED_CLIENTS.includes(client)) {
+      throw new Error(`Unsupported client: ${client}`);
+    }
+  }
+}
+
+function resolveScope(options) {
+  return options.project ? 'project' : 'user';
+}
+
+function resolveClients(scope, requestedClients) {
+  assertValidClients(requestedClients);
+  if (requestedClients.length > 0) return requestedClients;
+  if (scope === 'project') return [...PROJECT_CLIENTS];
+  return defaultUserClients();
+}
+
+function ensureClientSelection(scope, clients) {
+  if (clients.length > 0) return;
+  if (scope === 'project') return;
+  throw new Error(
+    'No supported clients detected. Re-run with --project or use --client to target a specific client.'
+  );
+}
+
+function ensureSafeAuth(command, scope, accessKey) {
+  if ((command === 'auth' || command === 'setup') && scope !== 'user') {
+    throw new Error(
+      '`proofable ${command}` only supports user scope so access keys never land in shared project config.'
+    );
+  }
+  if (scope === 'project' && accessKey) {
+    throw new Error(
+      'Access keys are only supported in user scope. Remove --project or omit --access-key.'
+    );
+  }
+}
+
+function buildCursorServer(accessKey) {
+  return buildCursorMcpConfig(accessKey);
+}
+
+function buildVsCodeServer(accessKey) {
+  return buildVsCodeMcpConfig(accessKey);
+}
+
+function buildClaudeServer(accessKey) {
+  return buildMcpHttpConfig(accessKey);
+}
+
+function cursorConfigPath(scope, cwd) {
+  return scope === 'user'
+    ? path.join(os.homedir(), '.cursor', 'mcp.json')
+    : path.join(cwd, '.cursor', 'mcp.json');
+}
+
+function vscodeConfigPath(scope, cwd) {
+  if (scope !== 'user') {
+    return path.join(cwd, '.vscode', 'mcp.json');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
+  }
+  if (process.platform === 'win32') {
+    return path.join(
+      process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
+      'Code',
+      'User',
+      'mcp.json'
+    );
+  }
+  return path.join(os.homedir(), '.config', 'Code', 'User', 'mcp.json');
+}
+
+function claudeProjectConfigPath(cwd) {
+  return path.join(cwd, '.mcp.json');
+}
+
+function codexConfigPath() {
+  return path.join(os.homedir(), '.codex', 'config.toml');
+}
+
+function removeCursorUserRegistration(dryRun) {
+  const targetPath = cursorConfigPath('user');
+  if (!fileExists(targetPath)) {
+    return { changed: false, removed: false, targetPath, backupPath: null };
+  }
+  const doc = readJsonFile(targetPath, { mcpServers: {} });
+  const servers =
+    doc.mcpServers && typeof doc.mcpServers === 'object' && !Array.isArray(doc.mcpServers)
+      ? { ...doc.mcpServers }
+      : {};
+  const presentKey = MCP_SERVER_CLEANUP_KEYS.find((key) =>
+    Object.prototype.hasOwnProperty.call(servers, key),
+  );
+  if (!presentKey) {
+    return { changed: false, removed: false, targetPath, backupPath: null };
+  }
+  delete servers[presentKey];
+  const writeResult = writeJsonFile(targetPath, { ...doc, mcpServers: servers }, dryRun);
+  return { ...writeResult, removed: true, targetPath };
+}
+
+function installCursor(scope, accessKey, dryRun, cwd) {
+  if (scope === 'user' && hostPluginRegistersMcp('cursor')) {
+    const cleared = removeCursorUserRegistration(dryRun);
+    return {
+      client: 'cursor',
+      scope,
+      configured: true,
+      authConfigured: false,
+      changed: cleared.changed,
+      deferredToPlugin: true,
+      removedUserRegistration: cleared.removed,
+      targetPath: 'proofable-mcp plugin',
+      backupPath: cleared.backupPath,
+      dryRun,
+      error: null
+    };
+  }
+  const targetPath = cursorConfigPath(scope, cwd);
+  const doc = readJsonFile(targetPath, { mcpServers: {} });
+  const serverConfig = buildCursorServer(accessKey);
+  const next = {
+    ...doc,
+    mcpServers: {
+      ...(doc.mcpServers && typeof doc.mcpServers === 'object' && !Array.isArray(doc.mcpServers)
+        ? doc.mcpServers
+        : {}),
+      [PROOFABLE_MCP_SERVER_NAME]: serverConfig
+    }
+  };
+  const writeResult = writeJsonFile(targetPath, next, dryRun);
+  return {
+    client: 'cursor',
+    scope,
+    configured: true,
+    authConfigured: Boolean(serverConfig.headers),
+    changed: writeResult.changed,
+    targetPath,
+    backupPath: writeResult.backupPath,
+    dryRun,
+    error: null
+  };
+}
+
+function installVsCode(scope, accessKey, dryRun, cwd) {
+  const targetPath = vscodeConfigPath(scope, cwd);
+  const doc = readJsonFile(targetPath, { servers: {} });
+  const serverConfig = buildVsCodeServer(accessKey);
+  const next = {
+    ...doc,
+    servers: {
+      ...(doc.servers && typeof doc.servers === 'object' && !Array.isArray(doc.servers)
+        ? doc.servers
+        : {}),
+      [PROOFABLE_MCP_SERVER_NAME]: serverConfig
+    }
+  };
+  const writeResult = writeJsonFile(targetPath, next, dryRun);
+  return {
+    client: 'vscode',
+    scope,
+    configured: true,
+    authConfigured: Boolean(serverConfig.headers),
+    changed: writeResult.changed,
+    targetPath,
+    backupPath: writeResult.backupPath,
+    dryRun,
+    error: null
+  };
+}
+
+function installClaudeProject(scope, accessKey, dryRun, cwd) {
+  const targetPath = claudeProjectConfigPath(cwd);
+  const doc = readJsonFile(targetPath, { mcpServers: {} });
+  const serverConfig = buildClaudeServer(accessKey);
+  const next = {
+    ...doc,
+    mcpServers: {
+      ...(doc.mcpServers && typeof doc.mcpServers === 'object' && !Array.isArray(doc.mcpServers)
+        ? doc.mcpServers
+        : {}),
+      [PROOFABLE_MCP_SERVER_NAME]: serverConfig
+    }
+  };
+  const writeResult = writeJsonFile(targetPath, next, dryRun);
+  return {
+    client: 'claude',
+    scope,
+    configured: true,
+    authConfigured: Boolean(serverConfig.headers),
+    changed: writeResult.changed,
+    targetPath,
+    backupPath: writeResult.backupPath,
+    dryRun,
+    error: null
+  };
+}
+
+function installClaudeUser(scope, accessKey, dryRun, cwd) {
+  if (!commandExists('claude')) {
+    throw new Error('Claude Code CLI is not installed or not on PATH.');
+  }
+
+  // Idempotent: if `claude mcp get` reports the server registered with the
+  // canonical URL and the same auth shape, skip the remove+add so a rerun
+  // never tears down a good Claude OAuth session.
+  const existing = inspectClaude(scope, cwd);
+  const wantsAccessKey = Boolean(accessKey);
+  if (existing.configured && Boolean(existing.authConfigured) === wantsAccessKey) {
+    return {
+      client: 'claude',
+      scope,
+      configured: true,
+      authConfigured: wantsAccessKey,
+      changed: false,
+      targetPath: '~/.claude.json',
+      backupPath: null,
+      dryRun,
+      error: null
+    };
+  }
+
+  if (!dryRun) {
+    for (const key of MCP_SERVER_CLEANUP_KEYS) {
+      runCommand('claude', ['mcp', 'remove', '--scope', 'user', key], cwd, true);
+    }
+    const addArgs = [
+      'mcp',
+      'add',
+      '--transport',
+      'http',
+      '--scope',
+      'user',
+      PROOFABLE_MCP_SERVER_NAME,
+      PROOFABLE_MCP_URL
+    ];
+    if (accessKey) {
+      addArgs.push('--header', `Authorization: Bearer ${accessKey}`);
+    }
+    runCommand('claude', addArgs, cwd);
+  }
+
+  return {
+    client: 'claude',
+    scope,
+    configured: true,
+    authConfigured: Boolean(accessKey),
+    changed: true,
+    targetPath: '~/.claude.json',
+    backupPath: null,
+    dryRun,
+    error: null
+  };
+}
+
+function installClaude(scope, accessKey, dryRun, cwd) {
+  if (scope === 'project') {
+    return installClaudeProject(scope, accessKey, dryRun, cwd);
+  }
+  return installClaudeUser(scope, accessKey, dryRun, cwd);
+}
+
+function installCodex(scope, accessKey, dryRun, cwd) {
+  if (scope !== 'user') {
+    throw new Error('Codex MCP setup is user-scoped through ~/.codex/config.toml.');
+  }
+  if (!commandExists('codex')) {
+    throw new Error('Codex CLI is not installed or not on PATH.');
+  }
+
+  const bearerTokenEnvVar = envAccessKey() ? 'PROOFABLE_ACCESS_KEY' : '';
+
+  // Idempotent: inspect first. If the server is already registered with the
+  // canonical URL, leave it untouched so a rerun never invalidates host-owned
+  // OAuth state (the previous remove+add tore down good Codex sessions).
+  const existing = inspectCodex(scope, cwd);
+  if (existing.configured) {
+    return {
+      client: 'codex',
+      scope,
+      configured: true,
+      authConfigured: bearerTokenEnvVar ? true : null,
+      changed: false,
+      targetPath: portablePath(codexConfigPath()),
+      backupPath: null,
+      dryRun,
+      error: null
+    };
+  }
+
+  if (!dryRun) {
+    // URL-only registration. Codex owns its OAuth client via DCR + PKCE on
+    // `codex mcp login proofable`; do not pin `proofable-cli` (that is the CLI's own
+    // loopback client, not a host client) and do NOT pin the resource
+    // (Codex discovers it from the protected-resource metadata).
+    const addArgs = ['mcp', 'add', PROOFABLE_MCP_SERVER_NAME, '--url', PROOFABLE_MCP_URL];
+    if (bearerTokenEnvVar) {
+      addArgs.push('--bearer-token-env-var', bearerTokenEnvVar);
+    }
+    const addResult = runCommand('codex', addArgs, cwd, true, 15_000);
+    if (addResult.status !== 0 || addResult.error) {
+      const inspected = inspectCodex(scope, cwd);
+      if (!inspected.configured) {
+        const detail =
+          [addResult.stderr, addResult.stdout].find(
+            value => typeof value === 'string' && value.trim()
+          ) || '';
+        throw new Error(
+          detail.trim() ||
+            'Codex did not finish MCP registration. Close other Codex windows and rerun setup.'
+        );
+      }
+    }
+  }
+
+  return {
+    client: 'codex',
+    scope,
+    configured: true,
+    authConfigured: bearerTokenEnvVar ? true : null,
+    changed: true,
+    targetPath: portablePath(codexConfigPath()),
+    backupPath: null,
+    dryRun,
+    error: null
+  };
+}
+
+function authCodex(scope, dryRun, cwd, cliOptions = {}) {
+  const setupResult = installCodex(scope, '', dryRun, cwd);
+  if (!dryRun) {
+    printHostAuthIntro('codex', cliOptions);
+    runCommand('codex', ['mcp', 'login', PROOFABLE_MCP_SERVER_NAME, '--scopes', CODEX_OAUTH_SCOPES], cwd);
+  }
+  return {
+    ...setupResult,
+    authConfigured: !dryRun,
+    changed: true
+  };
+}
+
+function installClient(client, scope, accessKey, dryRun, cwd, options = {}) {
+  if (client === 'cursor') return installCursor(scope, accessKey, dryRun, cwd);
+  if (client === 'vscode') return installVsCode(scope, accessKey, dryRun, cwd);
+  if (client === 'claude') return installClaude(scope, accessKey, dryRun, cwd);
+  if (client === 'codex') return installCodex(scope, accessKey, dryRun, cwd);
+  throw new Error(`Unsupported client: ${client}`);
+}
+
+function inspectCursor(scope, cwd) {
+  const pluginOwns = scope === 'user' && hostPluginRegistersMcp('cursor');
+  const targetPath = cursorConfigPath(scope, cwd);
+  if (!fileExists(targetPath)) {
+    if (pluginOwns) {
+      return {
+        client: 'cursor',
+        scope,
+        configured: true,
+        authConfigured: false,
+        deferredToPlugin: true,
+        targetPath: 'proofable-mcp plugin',
+        error: null
+      };
+    }
+    return {
+      client: 'cursor',
+      scope,
+      configured: false,
+      authConfigured: false,
+      targetPath,
+      error: null
+    };
+  }
+  const doc = readJsonFile(targetPath, {});
+  const server = doc.mcpServers?.[PROOFABLE_MCP_SERVER_NAME];
+  const configured = Boolean(server && server.url === PROOFABLE_MCP_URL);
+  return {
+    client: 'cursor',
+    scope,
+    configured: configured || pluginOwns,
+    authConfigured: Boolean(server?.headers?.Authorization),
+    pluginConflict: pluginOwns && configured,
+    deferredToPlugin: pluginOwns && !configured,
+    targetPath: configured ? targetPath : pluginOwns ? 'proofable-mcp plugin' : targetPath,
+    error: null
+  };
+}
+
+function inspectVsCode(scope, cwd) {
+  const targetPath = vscodeConfigPath(scope, cwd);
+  if (!fileExists(targetPath)) {
+    return {
+      client: 'vscode',
+      scope,
+      configured: false,
+      authConfigured: false,
+      targetPath,
+      error: null
+    };
+  }
+  const doc = readJsonFile(targetPath, {});
+  const server = doc.servers?.[PROOFABLE_MCP_SERVER_NAME];
+  return {
+    client: 'vscode',
+    scope,
+    configured: Boolean(server && server.url === PROOFABLE_MCP_URL),
+    authConfigured: Boolean(server?.headers?.Authorization),
+    targetPath,
+    error: null
+  };
+}
+
+function inspectClaude(scope, cwd) {
+  if (scope === 'project') {
+    const targetPath = claudeProjectConfigPath(cwd);
+    if (!fileExists(targetPath)) {
+      return {
+        client: 'claude',
+        scope,
+        configured: false,
+        authConfigured: false,
+        targetPath,
+        error: null
+      };
+    }
+    const doc = readJsonFile(targetPath, {});
+    const server = doc.mcpServers?.[PROOFABLE_MCP_SERVER_NAME];
+    return {
+      client: 'claude',
+      scope,
+      configured: Boolean(server && server.url === PROOFABLE_MCP_URL),
+      authConfigured: Boolean(server?.headers?.Authorization),
+      targetPath,
+      error: null
+    };
+  }
+
+  if (!commandExists('claude')) {
+    return {
+      client: 'claude',
+      scope,
+      configured: false,
+      authConfigured: null,
+      targetPath: '~/.claude.json',
+      error: null
+    };
+  }
+
+  const result = runCommand('claude', ['mcp', 'list'], cwd, true);
+  const configured =
+    result.status === 0 &&
+    result.stdout.split(/\r?\n/).some(line => line.trim() === PROOFABLE_MCP_SERVER_NAME);
+  return {
+    client: 'claude',
+    scope,
+    configured,
+    authConfigured: configured ? null : false,
+    targetPath: '~/.claude.json',
+    error: null
+  };
+}
+
+function inspectCodex(scope, cwd) {
+  const targetPath = portablePath(codexConfigPath());
+  if (scope !== 'user') {
+    return {
+      client: 'codex',
+      scope,
+      configured: false,
+      authConfigured: null,
+      targetPath,
+      error: 'Codex MCP setup is user-scoped through ~/.codex/config.toml.'
+    };
+  }
+  if (!commandExists('codex')) {
+    return {
+      client: 'codex',
+      scope,
+      configured: false,
+      authConfigured: null,
+      targetPath,
+      error: null
+    };
+  }
+
+  const result = runCommand('codex', ['mcp', 'get', PROOFABLE_MCP_SERVER_NAME], cwd, true, 10_000);
+  const configured =
+    result.status === 0 &&
+    result.stdout.split(/\r?\n/).some(line => line.trim() === `url: ${PROOFABLE_MCP_URL}`);
+  return {
+    client: 'codex',
+    scope,
+    configured,
+    authConfigured: configured ? null : false,
+    targetPath,
+    error: null
+  };
+}
+
+function inspectClient(client, scope, cwd) {
+  if (client === 'cursor') return inspectCursor(scope, cwd);
+  if (client === 'vscode') return inspectVsCode(scope, cwd);
+  if (client === 'claude') return inspectClaude(scope, cwd);
+  if (client === 'codex') return inspectCodex(scope, cwd);
+  throw new Error(`Unsupported client: ${client}`);
+}
+
+function printJson(payload) {
+  process.stdout.write(jsonStringify(payload));
+}
+
+function clientTargetPath(client, scope, cwd) {
+  if (client === 'cursor') return cursorConfigPath(scope, cwd);
+  if (client === 'vscode') return vscodeConfigPath(scope, cwd);
+  if (client === 'claude') {
+    return scope === 'project' ? claudeProjectConfigPath(cwd) : '~/.claude.json';
+  }
+  return null;
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error || 'Unknown error');
+}
+
+function parseSseMessages(text) {
+  const messages = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload) continue;
+    try {
+      messages.push(JSON.parse(payload));
+    } catch {
+      // Ignore malformed SSE fragments. The caller will report the raw body preview.
+    }
+  }
+  return messages;
+}
+
+function parseMcpResponse(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return parseSseMessages(trimmed)[0] || null;
+  }
+}
+
+function firstTextContent(value) {
+  const content = value?.result?.content ?? value?.content;
+  if (!Array.isArray(content)) return '';
+  const first = content.find(item => item?.type === 'text' && typeof item?.text === 'string');
+  return first?.text || '';
+}
+
+function parseMcpToolPayload(value) {
+  const text = firstTextContent(value);
+  if (text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { text };
+    }
+  }
+  return value?.result ?? value;
+}
+
+async function postMcpJsonRpc({ id, method, params, accessKey, sessionId, signal }) {
+  const response = await fetch(PROOFABLE_MCP_URL, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      'mcp-protocol-version': '2025-11-25',
+      ...(accessKey ? { authorization: `Bearer ${accessKey}` } : {}),
+      ...(sessionId ? { 'mcp-session-id': sessionId } : {})
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      method,
+      params: params ?? {}
+    }),
+    signal
+  });
+  const body = await response.text();
+  return {
+    response,
+    body,
+    json: parseMcpResponse(body),
+    sessionId: response.headers.get('mcp-session-id') || sessionId || ''
+  };
+}
+
+async function callMcpTool({ name, args, accessKey, sessionId, signal }) {
+  const result = await postMcpJsonRpc({
+    id: 3,
+    method: 'tools/call',
+    params: { name, arguments: args ?? {} },
+    accessKey,
+    sessionId,
+    signal
+  });
+  if (!result.response.ok || result.json?.error) {
+    return {
+      ok: false,
+      name,
+      status: result.response.status,
+      error: result.json?.error?.message || result.json?.error || result.body.slice(0, 200)
+    };
+  }
+  return {
+    ok: true,
+    name,
+    payload: parseMcpToolPayload(result.json)
+  };
+}
+
+async function initializeMcpSession(accessKey, signal) {
+  const init = await postMcpJsonRpc({
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'proofable-cli', version: CLI_PACKAGE_VERSION }
+    },
+    accessKey,
+    signal
+  });
+  if (!init.response.ok || init.json?.error) {
+    throw new Error(init.json?.error?.message || 'MCP initialize failed');
+  }
+  return { sessionId: init.sessionId || '' };
+}
+
+async function evaluateAgentMountDoctor(accessKey, cwd, signal) {
+  const manifest = readMountManifest(cwd);
+  const fileHealth = evaluateMountFileHealth(manifest);
+  const out = {
+    mountFilePresent: Boolean(manifest),
+    mountFileValid: fileHealth.mountFileValid,
+    mountNeedsRefresh: fileHealth.needsRefresh,
+    mountRefreshReason: fileHealth.reason,
+    missingDelegation: fileHealth.missingDelegation,
+    delegationExpired: fileHealth.delegationExpired,
+    mountAgentId: manifest?.identity?.agentId || null,
+    agentVerified: false,
+    agentLinkStatus: null
+  };
+  if (!accessKey) return out;
+
+  let sessionId = '';
+  try {
+    const init = await initializeMcpSession(accessKey, signal);
+    sessionId = init.sessionId;
+  } catch {
+    return out;
+  }
+
+  const agentId = out.mountAgentId || manifest?.identity?.agentId;
+  const agentWallet = manifest?.identity?.agentWallet;
+  if (agentWallet) {
+    const link = await callMcpTool({
+      name: 'proofable_agent_link',
+      args: { agentWallet },
+      accessKey,
+      sessionId,
+      signal
+    });
+    if (link.ok) {
+      out.agentLinkStatus = link.payload?.status || (link.payload?.linked ? 'ok' : 'link_required');
+      out.agentVerified = Boolean(link.payload?.linked);
+      out.mountAgentLabel = link.payload?.agentLabel || link.payload?.identity?.agentLabel || null;
+    }
+  } else if (agentId) {
+    try {
+      const bundle = await resolveRuntimeBundleFromMcp({
+        callMcpTool: args => callMcpTool({ ...args, accessKey, sessionId, signal }),
+        accessKey,
+        agentId,
+        signal
+      });
+      out.agentVerified = Boolean(bundle?.trust?.identityQHash && bundle?.delegation);
+      out.mountAgentId = bundle.identity?.agentId || agentId;
+      out.mountAgentLabel = bundle.identity?.agentLabel || null;
+    } catch {
+      out.agentVerified = false;
+    }
+  }
+  return out;
+}
+
+async function runMount(options) {
+  const cwd = process.cwd();
+  const scope = resolveScope(options);
+  const accessKey = await resolveLiveAccessKeyWithRefresh(options, scope, cwd);
+  const agentTarget = String(options.agentTarget || options.agent || '').trim();
+  if (!agentTarget) {
+    throw new Error('Usage: proofable mount <agentId> [--apply cursor|claude|codex]');
+  }
+  if (!accessKey) {
+    throw new Error('Credential required. Run `npx -y -p @proofable/sdk proofable auth --oauth` or pass --access-key.');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const bundle = await resolveRuntimeBundleFromMcp({
+      callMcpTool: args => callMcpTool({ ...args, accessKey, signal: controller.signal }),
+      initializeMcp: () => initializeMcpSession(accessKey, controller.signal),
+      accessKey,
+      agentId: agentTarget,
+      signal: controller.signal
+    });
+
+    const applyFlavor = String(options.apply || '').trim().toLowerCase();
+    let applyResult = null;
+    if (applyFlavor) {
+      if (!['cursor', 'claude', 'codex'].includes(applyFlavor)) {
+        throw new Error('--apply must be cursor, claude, or codex');
+      }
+      applyResult = applyRuntimeBundle(applyFlavor, bundle, cwd, { dryRun: options.dryRun });
+    } else if (!options.json) {
+      applyRuntimeBundle('cursor', bundle, cwd, { dryRun: options.dryRun });
+    }
+
+    const payload = {
+      command: 'mount',
+      schema: RUNTIME_MOUNT_SCHEMA,
+      agentId: bundle.identity.agentId,
+      bundle,
+      applied: applyResult,
+      dryRun: Boolean(options.dryRun)
+    };
+
+    if (options.json) {
+      printJson(payload);
+      return payload;
+    }
+
+    emitCliBanner(options);
+    writeCliLine(paint('mount', 'green'));
+    logStep('ok', 'agent', bundle.identity.agentLabel || bundle.identity.agentId);
+    writeGuidanceLine(`Identity proof: ${bundle.trust.identityProofUrl}`);
+    if (bundle.trust.delegationProofUrl) {
+      writeGuidanceLine(`Permission proof: ${bundle.trust.delegationProofUrl}`);
+    } else {
+      writeGuidanceLine('No permission proof yet. Set up the agent on proofable.me before it takes scoped actions.');
+    }
+    if (applyResult) {
+      for (const filePath of applyResult.written) {
+        logStep('ok', 'wrote', filePath);
+      }
+    } else if (!options.dryRun) {
+      logStep('ok', 'wrote', path.join(cwd, '.proofable', 'mount.json'));
+    }
+    writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
+    writeCliLine('');
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function runLiveMcpDiagnostics(accessKey) {
+  // Even without a static access key, attempt an unauthenticated initialize.
+  // The MCP server responds with 401 + WWW-Authenticate (OAuth challenge) when
+  // unauthenticated , that confirms the server is reachable and OAuth is configured.
+  // With an access key, the full authenticated flow runs.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const init = await postMcpJsonRpc({
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-11-25',
+        capabilities: {},
+        clientInfo: { name: 'proofable-cli', version: CLI_PACKAGE_VERSION }
+      },
+      accessKey,
+      signal: controller.signal
+    });
+    if (!init.response.ok || init.json?.error) {
+      // 401 means the server is reachable but requires authentication.
+      // For URL-only OAuth configs (no accessKey), this is the expected
+      // response , the IDE handles OAuth, not the CLI. Report as reachable.
+      const isAuthRequired = init.response.status === 401;
+      return {
+        live: true,
+        reachable: isAuthRequired || init.response.status < 500,
+        authenticated: false,
+        toolsCount: 0,
+        tools: [],
+        checks: [
+          {
+            name: 'initialize',
+            ok: false,
+            status: init.response.status,
+            error: init.json?.error?.message || init.body.slice(0, 200)
+          }
+        ]
+      };
+    }
+
+    const list = await postMcpJsonRpc({
+      id: 2,
+      method: 'tools/list',
+      params: {},
+      accessKey,
+      sessionId: init.sessionId,
+      signal: controller.signal
+    });
+    const tools = list.json?.result?.tools ?? list.json?.tools ?? [];
+    const toolNames = Array.isArray(tools) ? tools.map(tool => tool.name).filter(Boolean) : [];
+    const context = await callMcpTool({
+      name: 'proofable_context',
+      args: {},
+      accessKey,
+      sessionId: init.sessionId,
+      signal: controller.signal
+    });
+    const mode = context.ok ? context.payload?.mode?.current || context.payload?.mode || '' : '';
+    const profileCtx = context.ok ? context.payload?.profileContext : null;
+    const principal = profileCtx?.principal || null;
+    const proofsTotal = profileCtx?.profileSummary?.proofsSummary?.total;
+    return {
+      live: true,
+      reachable: true,
+      authenticated: Boolean(accessKey) && context.ok,
+      toolsCount: toolNames.length,
+      tools: toolNames,
+      contextMode: mode,
+      sessionWallet: context.ok ? context.payload?.sessionWallet || principal?.primaryAccount || null : null,
+      profileHandle: principal?.handle || null,
+      proofsTotal: Number.isFinite(Number(proofsTotal)) ? Number(proofsTotal) : null,
+      checks: [
+        {
+          name: 'initialize',
+          ok: true,
+          protocolVersion: init.json?.result?.protocolVersion || null
+        },
+        {
+          name: 'tools/list',
+          ok: list.response.ok && !list.json?.error,
+          status: list.response.status,
+          toolsCount: toolNames.length
+        },
+        { name: 'proofable_context', ok: context.ok, mode }
+      ]
+    };
+  } catch (error) {
+    return {
+      live: true,
+      reachable: false,
+      authenticated: false,
+      toolsCount: 0,
+      tools: [],
+      checks: [{ name: 'network', ok: false, error: errorMessage(error) }]
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildClientFailure(client, scope, cwd, dryRun, error) {
+  return {
+    client,
+    scope,
+    configured: false,
+    authConfigured: false,
+    changed: false,
+    targetPath: clientTargetPath(client, scope, cwd),
+    backupPath: null,
+    dryRun,
+    error: errorMessage(error)
+  };
+}
+
+function runClientOperations(clients, scope, cwd, dryRun, runner) {
+  return clients.map(client => {
+    try {
+      return runner(client);
+    } catch (error) {
+      return buildClientFailure(client, scope, cwd, dryRun, error);
+    }
+  });
+}
+
+
+function base64url(buffer) {
+  return Buffer.from(buffer)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+function generateCodeVerifier() {
+  return base64url(randomBytes(32));
+}
+
+function deriveCodeChallenge(verifier) {
+  return base64url(createHash('sha256').update(verifier).digest());
+}
+
+async function runAuthBrowser(options) {
+  const scope = resolveScope(options);
+  if (scope !== 'user') {
+    throw new Error('Browser auth only supports user scope. Remove --project flag.');
+  }
+  const clients = resolveClients(scope, options.clients);
+  ensureClientSelection(scope, clients);
+  const browserManagedClients = clients.filter(client => client !== 'codex');
+  const hostManagedClients = clients.filter(client => client === 'codex');
+  const cwd = process.cwd();
+
+  const { createServer } = await import('node:http');
+
+  const csrfState = randomBytes(16).toString('hex');
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = deriveCodeChallenge(codeVerifier);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let callbackReceived = false;
+    function finish(error, value) {
+      if (settled) return;
+      settled = true;
+      server.close();
+      if (error) reject(error);
+      else resolve(value);
+    }
+
+    const server = createServer((req, res) => {
+      const url = new URL(req.url, `http://127.0.0.1:${server.address().port}`);
+
+      // Ignore browser noise; keep the server alive for the real callback.
+      if (url.pathname === '/favicon.ico') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      if (url.pathname !== '/callback') {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+
+      // Guard against browser double-redirect: a second /callback (retry,
+      // duplicate tab, preflight) would re-enter the token exchange and burn
+      // the single-use auth code on a second fetch. Once we've accepted a
+      // valid callback, acknowledge and ignore further hits until close.
+      if (callbackReceived) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><body><h2>Already processing</h2><p>You can close this tab and return to your terminal.</p></body></html>');
+        return;
+      }
+
+      const returnedState = url.searchParams.get('state');
+      if (!returnedState || returnedState !== csrfState) {
+        res.writeHead(403, { 'Content-Type': 'text/html' });
+        res.end('<html><body><h2>Security check failed</h2><p>Invalid request. Try again.</p></body></html>');
+        finish(new Error('CSRF state mismatch'));
+        return;
+      }
+
+      // RFC 9207 issuer validation , 2026-07-28 MCP auth hardening headline.
+      // When the AS returns `iss`, the client MUST confirm it matches the expected
+      // issuer (https://proofable.me). A mismatch indicates an IdP mix-up attack.
+      // When the AS omits `iss` (e.g. older deployments), we fail closed too,
+      // because the AS metadata advertises authorization_response_iss_parameter_supported.
+      const returnedIss = url.searchParams.get('iss');
+      if (!returnedIss || returnedIss !== PROOFABLE_OAUTH_ISSUER) {
+        res.writeHead(403, { 'Content-Type': 'text/html' });
+        res.end('<html><body><h2>Security check failed</h2><p>Issuer mismatch. Try again.</p></body></html>');
+        finish(new Error(`OAuth issuer mismatch: expected ${PROOFABLE_OAUTH_ISSUER}, got ${returnedIss || '(missing)'}`));
+        return;
+      }
+
+      const code = url.searchParams.get('code');
+      const error = url.searchParams.get('error');
+
+      // We've validated state + issuer: this is the canonical callback. Block
+      // any duplicate redirect from re-entering the token exchange.
+      callbackReceived = true;
+
+      if (error) {
+        callbackReceived = true;
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><body><h2>Authentication failed</h2><p>You can close this tab and try again.</p></body></html>');
+        finish(new Error(`Authentication failed: ${error}`));
+        return;
+      }
+
+      if (!code) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><body><h2>Missing auth code</h2><p>You can close this tab and try again.</p></body></html>');
+        finish(new Error('No auth code received from callback'));
+        return;
+      }
+
+      const redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
+      const params = new URLSearchParams();
+      params.set('grant_type', 'authorization_code');
+      params.set('code', code);
+      params.set('redirect_uri', redirectUri);
+      params.set('client_id', PROOFABLE_OAUTH_CLIENT_ID);
+      params.set('code_verifier', codeVerifier);
+      params.set('resource', PROOFABLE_MCP_RESOURCE);
+
+      fetch(PROOFABLE_TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body: params.toString(),
+        signal: AbortSignal.timeout(15_000),
+      })
+        .then(tokenResp => tokenResp.json())
+        .then(tokenJson => {
+          if (!tokenJson.access_token) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end('<html><body><h2>Token exchange failed</h2><p>Please try again.</p></body></html>');
+            finish(new Error(tokenJson.error_description || tokenJson.error || 'Token exchange failed'));
+            return;
+          }
+
+          const accessToken = tokenJson.access_token;
+          persistOAuthTokens(tokenJson, PROOFABLE_OAUTH_CLIENT_ID, PROOFABLE_MCP_RESOURCE);
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h2>Authenticated</h2><p>You can close this tab and return to your terminal.</p></body></html>');
+
+          const results = runClientOperations(browserManagedClients, scope, cwd, options.dryRun, client =>
+            installClient(client, scope, accessToken, options.dryRun, cwd, options)
+          );
+          results.push(
+            ...runClientOperations(hostManagedClients, scope, cwd, options.dryRun, () =>
+              authCodex(scope, options.dryRun, cwd, options)
+            )
+          );
+          const payload = {
+            command: 'auth',
+            scope,
+            clients,
+            accessKeyConfigured: true,
+            authMethod: 'browser',
+            results,
+            hasErrors: results.some(result => result.error)
+          };
+          finish(null, payload);
+        })
+        .catch(err => {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h2>Connection error</h2><p>Please try again.</p></body></html>');
+          finish(err);
+        });
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      const redirectUri = `http://127.0.0.1:${port}/callback`;
+      const authParams = new URLSearchParams({
+        response_type: 'code',
+        client_id: PROOFABLE_OAUTH_CLIENT_ID,
+        redirect_uri: redirectUri,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        state: csrfState,
+        scope: 'neus:core neus:profile neus:secrets offline_access',
+        resource: PROOFABLE_MCP_RESOURCE
+      });
+      const authUrl = `${PROOFABLE_APP_URL}/oauth/authorize?${authParams.toString()}`;
+
+      if (!options.json) {
+        printAuthBrowserIntro(authUrl, options);
+        logStep('next', 'wait', 'finish sign-in in the browser');
+      }
+
+      const browserCommand = process.platform === 'win32'
+        ? { executable: 'rundll32.exe', args: ['url.dll,FileProtocolHandler', authUrl] }
+        : process.platform === 'darwin'
+          ? { executable: 'open', args: [authUrl] }
+          : { executable: 'xdg-open', args: [authUrl] };
+      const browserProcess = spawn(browserCommand.executable, browserCommand.args, {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      browserProcess.once('error', () => {
+        if (!options.json) {
+          logStep('warn', 'browser', 'open the URL above manually');
+        }
+      });
+      browserProcess.unref();
+    });
+
+    // Timeout after 5 minutes
+    const timeout = setTimeout(() => {
+      finish(new Error('Authentication timed out after 5 minutes. Try again.'));
+    }, 5 * 60 * 1000);
+
+    server.on('close', () => {
+      clearTimeout(timeout);
+    });
+  });
+}
+
+function runAuth(options) {
+  const scope = resolveScope(options);
+  const accessKey = resolveAccessKey(options);
+  ensureSafeAuth('auth', scope, accessKey);
+  const cwd = process.cwd();
+  const clients = resolveClients(scope, options.clients);
+  ensureClientSelection(scope, clients);
+
+  if (!accessKey) {
+    if (options.oauth) {
+      return runAuthBrowser(options);
+    }
+    const hostClients = clients.filter(isHostConnectClient);
+    const codexClients = clients.filter(client => client === 'codex');
+    const results = [
+      ...runClientOperations(hostClients, scope, cwd, options.dryRun, client =>
+        installClient(client, scope, '', options.dryRun, cwd, options)
+      ),
+      ...runClientOperations(codexClients, scope, cwd, options.dryRun, () =>
+        authCodex(scope, options.dryRun, cwd, options)
+      )
+    ];
+    const follow = hostConnectHint(clients);
+    return {
+      command: 'auth',
+      scope,
+      clients,
+      accessKeyConfigured: false,
+      authMethod: 'host-oauth',
+      hostSignInHint: follow.hint,
+      results,
+      hasErrors: results.some(result => result.error)
+    };
+  }
+
+  const results = runClientOperations(clients, scope, cwd, options.dryRun, client =>
+    installClient(client, scope, accessKey, options.dryRun, cwd, options)
+  );
+  const payload = {
+    command: 'auth',
+    scope,
+    clients,
+    accessKeyConfigured: true,
+    authMethod: resolveAuthMethod(options, accessKey),
+    results,
+    hasErrors: results.some(result => result.error)
+  };
+
+  return payload;
+}
+
+async function runRefresh(options = {}) {
+  const store = readTokenStore();
+  if (!store?.refreshToken) {
+    const message = 'No stored OAuth refresh token. Run `npx -y -p @proofable/sdk proofable auth --oauth` first.';
+    if (options.json) {
+      printJson({ command: 'refresh', error: message });
+    } else {
+      writeCliLine('');
+      writeCliLine(`  ${paint('Proofable', 'green')}  ${paint('refresh', 'red')}`);
+      writeCliLine('');
+      logStep('warn', 'missing', 'no stored refresh token; run `npx -y -p @proofable/sdk proofable auth --oauth` first');
+    }
+    process.exitCode = 1;
+    return null;
+  }
+  try {
+    const refreshed = await refreshOAuthToken();
+    const expiresAtDate = new Date(refreshed.expiresAt).toLocaleString();
+    if (options.json) {
+      printJson({ command: 'refresh', status: 'ok', expiresAt: refreshed.expiresAt });
+    } else {
+      writeCliLine('');
+      writeCliLine(`  ${paint('Proofable', 'green')}  ${paint('refresh', 'green')}`);
+      writeCliLine('');
+      logStep('ok', 'token', `rotated; valid until ${expiresAtDate}`);
+      writeCliLine('');
+      writeGuidanceLine('Skip this if the host handles OAuth. It is an escape hatch for clients whose own refresh is absent or buggy.');
+    }
+    return refreshed;
+  } catch (err) {
+    const message = err?.message || 'refresh failed';
+    if (options.json) {
+      printJson({ command: 'refresh', error: message });
+    } else {
+      writeCliLine('');
+      writeCliLine(`  ${paint('Proofable', 'green')}  ${paint('refresh', 'red')}`);
+      writeCliLine('');
+      logStep('warn', 'failed', message);
+    }
+    process.exitCode = 1;
+    return null;
+  }
+}
+
+function runStatus(options) {
+  const scope = resolveScope(options);
+  const cwd = process.cwd();
+  const clients = resolveClients(scope, options.clients);
+  ensureClientSelection(scope, clients);
+
+  const inspected = runClientOperations(clients, scope, cwd, options.dryRun, client =>
+    inspectClient(client, scope, cwd)
+  );
+  const payload = {
+    command: 'status',
+    scope,
+    clients: inspected,
+    hasErrors: inspected.some(result => result.error)
+  };
+
+  if (options.json) {
+    printJson(payload);
+    return;
+  }
+  printFlowSummary('status', scope, inspected, { cliOptions: options });
+}
+
+async function runSetup(options) {
+  const scope = resolveScope(options);
+  const accessKey = resolveAccessKey(options);
+  ensureSafeAuth('setup', scope, accessKey);
+  const cwd = process.cwd();
+  if (options.project && accessKey) {
+    throw new Error(
+      'Access keys are only supported in user scope. Remove --project or omit --access-key.'
+    );
+  }
+
+  const clients = resolveClients(scope, options.clients);
+  ensureClientSelection(scope, clients);
+  const initResults = runClientOperations(clients, scope, cwd, options.dryRun, client =>
+    installClient(client, scope, accessKey, options.dryRun, cwd, options)
+  );
+  let skills = [];
+  let skillError = null;
+  if (!initResults.some(result => result.error)) {
+    try {
+      skills = installTrustSkill(clients, options.dryRun);
+    } catch (error) {
+      skillError = errorMessage(error);
+    }
+  }
+
+  const payload = {
+    command: 'setup',
+    scope,
+    detectedClients: defaultUserClients(),
+    clients,
+    accessKeyConfigured: Boolean(accessKey),
+    results: initResults,
+    skills,
+    skillError,
+    hasErrors: initResults.some(result => result.error) || Boolean(skillError)
+  };
+
+  if (payload.hasErrors) {
+    if (options.json) printJson(payload);
+    else printFlowSummary('setup', scope, initResults, { cliOptions: options });
+    process.exitCode = 1;
+    return payload;
+  }
+
+  if (options.json) {
+    payload.authRequired = !accessKey && !options.dryRun;
+    if (payload.authRequired) {
+      const follow = hostConnectHint(clients);
+      payload.hostSignInHint = follow.hint;
+      payload.nextCommand = follow.nextCommand;
+    }
+    printJson(payload);
+    return payload;
+  }
+
+  printFlowSummary('setup', scope, initResults, {
+    nextStep: accessKey ? 'Ask your assistant: "Use Proofable before taking sensitive actions."' : '',
+    cliOptions: options
+  });
+  writeCliLine(paint('Trust workflow skill', 'cyan'));
+  for (const skill of skills) {
+    if (skill.deferredToPlugin) {
+      logStep(
+        'ok',
+        skill.hosts.join(','),
+        'proofable-mcp plugin bundles the trust skill. No user-level copy needed'
+      );
+    } else {
+      logStep(
+        'ok',
+        skill.hosts.join(','),
+        `${skill.targetPath}${skill.changed ? ' (installed)' : ' (current)'}`
+      );
+    }
+  }
+  writeCliLine('');
+
+  // Setup installs config + skill, then stops. Host sign-in is Connect
+  // (Logout first if Unauthorized). Codex uses `proofable auth --client
+  // codex`. `proofable auth --oauth` is the CLI token store only.
+  if (!accessKey && !options.dryRun) {
+    const follow = hostConnectHint(clients);
+    writeCliLine(paint(follow.hint, 'cyan'));
+    payload.authRequired = true;
+    payload.hostSignInHint = follow.hint;
+    payload.nextCommand = follow.nextCommand;
+  }
+
+  if (options.agent && !options.dryRun) {
+    const mountKey = resolveLiveAccessKey(options, scope, cwd);
+    if (mountKey) {
+      await runMount({
+        ...options,
+        agentTarget: options.agent,
+        apply: options.apply || 'cursor',
+        json: false,
+        live: true
+      });
+    }
+  }
+
+  return payload;
+}
+
+const ASSISTANT_EXAMPLE_PROMPTS = [
+  'Use Proofable before taking sensitive actions.',
+  'Check whether I already have the required proof.',
+  'Verify this agent is trusted before it runs tools.',
+  'Connect my Proofable agent context, then follow its scoped policy.',
+  'Use Proofable Vault to store or revoke secrets.',
+  'Show the proof for this verification.'
+];
+
+function runExamples(options) {
+  const payload = {
+    command: 'examples',
+    intro: 'Try these in your assistant:',
+    prompts: ASSISTANT_EXAMPLE_PROMPTS
+  };
+
+  if (options.json) {
+    printJson(payload);
+    return;
+  }
+
+  emitCliBanner(options);
+  writeCliLine(paint('examples', 'green'));
+  writeCliLine('');
+  ASSISTANT_EXAMPLE_PROMPTS.forEach((prompt, index) => {
+    writeCliLine(`  ${paint(String(index + 1) + '.', 'cyan')} ${prompt}`);
+  });
+  writeCliLine('');
+}
+
+async function resolveLiveCredentialWithRefresh(options, scope, cwd) {
+  const credential = resolveLiveCredential(options, scope, cwd);
+  const store = readTokenStore();
+  if (credential.source === 'cli-store' && store?.refreshToken && isTokenExpired(store)) {
+    try {
+      const refreshed = await refreshOAuthToken();
+      return { key: refreshed.accessToken, source: 'cli-store' };
+    } catch {
+      return credential;
+    }
+  }
+  return credential;
+}
+
+async function resolveLiveAccessKeyWithRefresh(options, scope, cwd) {
+  return (await resolveLiveCredentialWithRefresh(options, scope, cwd)).key;
+}
+
+async function runDoctor(options) {
+  const displayCommand = options.displayCommand || 'doctor';
+  const scope = resolveScope(options);
+  const cwd = process.cwd();
+  const clients = resolveClients(scope, options.clients);
+  ensureClientSelection(scope, clients);
+
+  const inspected = runClientOperations(clients, scope, cwd, options.dryRun, client =>
+    inspectClient(client, scope, cwd)
+  );
+  const skills = inspectTrustSkill(clients);
+  const configuredClients = inspected.filter(r => r.configured);
+  const credential = await resolveLiveCredentialWithRefresh(options, scope, cwd);
+  const liveAccessKey = credential.key;
+  const hasUrlOnlyOAuth = inspected.some(
+    result => result.configured && result.authConfigured === false
+  );
+  const follow = hostConnectHint(clients);
+  const payload = {
+    command: displayCommand,
+    package: '@proofable/sdk',
+    packageVersion: CLI_PACKAGE_VERSION,
+    endpoint: PROOFABLE_MCP_URL,
+    scope,
+    clients: inspected,
+    skills,
+    configuredCount: configuredClients.length,
+    accessKeyPresent: Boolean(liveAccessKey),
+    credentialSource: credential.source,
+    authState: liveAccessKey
+      ? credential.source === 'cli-store'
+        ? 'cli-oauth'
+        : 'access-key-or-cli-oauth'
+      : hasUrlOnlyOAuth
+        ? 'host-oauth'
+        : 'not-connected',
+    profileConnectable: false,
+    agentVerified: false,
+    live: options.live,
+    mcp: null,
+    summary: '',
+    hasErrors:
+      inspected.some(result => result.error) ||
+      skills.some(skill => !skill.installed || !skill.current)
+  };
+
+  if (options.live) {
+    payload.mcp = await runLiveMcpDiagnostics(liveAccessKey);
+    payload.profileConnectable = Boolean(payload.mcp.authenticated);
+    payload.hasErrors =
+      payload.hasErrors || (liveAccessKey && (!payload.mcp.reachable || !payload.mcp.authenticated));
+    if (liveAccessKey) {
+      try {
+        const agentDoctor = await evaluateAgentMountDoctor(
+          liveAccessKey,
+          cwd,
+          AbortSignal.timeout(20000)
+        );
+        payload.agentVerified = agentDoctor.agentVerified;
+        payload.mountFilePresent = agentDoctor.mountFilePresent;
+        payload.mountFileValid = agentDoctor.mountFileValid;
+        payload.mountNeedsRefresh = agentDoctor.mountNeedsRefresh;
+        payload.mountRefreshReason = agentDoctor.mountRefreshReason;
+        payload.mountAgentId = agentDoctor.mountAgentId;
+        payload.mountAgentLabel = agentDoctor.mountAgentLabel || null;
+        payload.agentLinkStatus = agentDoctor.agentLinkStatus;
+        payload.delegationExpired = agentDoctor.delegationExpired;
+        payload.missingDelegation = agentDoctor.missingDelegation;
+      } catch {
+        payload.agentVerified = false;
+      }
+    }
+  } else {
+    const manifest = readMountManifest(cwd);
+    payload.mountFilePresent = Boolean(manifest);
+    payload.mountAgentId = manifest?.identity?.agentId || null;
+  }
+
+  if (options.json) {
+    printJson(payload);
+    return;
+  }
+
+  if (configuredClients.length === 0) {
+    emitCliBanner(options);
+    writeCliLine(paint(displayCommand, 'green'));
+    for (const result of inspected) {
+      if (result.error) {
+        logStep('warn', result.client, result.error);
+      } else if (result.authConfigured === null) {
+        logStep('skip', result.client, 'not installed');
+      } else {
+        logStep('skip', result.client, 'not configured');
+      }
+    }
+    writeCliLine('');
+    writeCliLine(paint('MCP endpoint', 'cyan'));
+    writeGuidanceLine(PROOFABLE_MCP_URL);
+    writeCliLine(paint('Trust workflow skill', 'cyan'));
+    for (const skill of skills) {
+      logStep(
+        skill.current ? 'ok' : 'warn',
+        skill.hosts.join(','),
+        skill.deferredToPlugin
+          ? 'proofable-mcp plugin bundles the trust skill'
+          : skill.current
+            ? skill.targetPath
+            : `${skill.targetPath} (missing or outdated)`
+      );
+    }
+    writeCliLine(paint('Profile connection', 'cyan'));
+    writeGuidanceLine(`No selected MCP host is configured yet. Run \`${preferredSetupCommand(inspected)}\`.`);
+    writeGuidanceLine(follow.hint);
+    writeGuidanceLine('Then re-check with `npx -y -p @proofable/sdk proofable doctor --live`.');
+    writeCliLine('');
+    process.exitCode = 1;
+    return;
+  }
+
+  printFlowSummary(displayCommand, scope, inspected, { cliOptions: options });
+  writeCliLine(paint('Package', 'cyan'));
+  writeGuidanceLine(`@proofable/sdk@${CLI_PACKAGE_VERSION}`);
+  writeCliLine(paint('MCP endpoint', 'cyan'));
+  writeGuidanceLine(PROOFABLE_MCP_URL);
+  writeCliLine(paint('Trust workflow skill', 'cyan'));
+  for (const skill of skills) {
+    logStep(
+      skill.current ? 'ok' : 'warn',
+      skill.hosts.join(','),
+      skill.deferredToPlugin
+        ? 'proofable-mcp plugin bundles the trust skill'
+        : skill.current
+          ? skill.targetPath
+          : `${skill.targetPath} (missing or outdated)`
+    );
+  }
+  if (inspected.some(result => result.pluginConflict)) {
+    writeCliLine(paint('Registration', 'cyan'));
+    writeGuidanceLine(
+      'Plugin and a user MCP config both register neus. Remove the extra user entry; keep one registration.'
+    );
+    payload.hasErrors = true;
+  }
+  const hasCodex = inspected.some(result => result.client === 'codex');
+  writeCliLine(paint('Profile connection', 'cyan'));
+  if (options.live && payload.mcp) {
+    if (credential.source === 'cli-store' && hasUrlOnlyOAuth) {
+      writeGuidanceLine(
+        'CLI ~/.proofable session is not the host MCP session.'
+      );
+    }
+    if (!liveAccessKey) {
+      if (hasUrlOnlyOAuth) {
+        writeGuidanceLine(follow.hint);
+        if (payload.mcp.reachable) {
+          writeGuidanceLine('Hosted MCP is reachable. CLI cannot see host OAuth.');
+        } else {
+          writeGuidanceLine(
+            'MCP server was not reachable. Check your network or run `npx -y -p @proofable/sdk proofable doctor --live` again.'
+          );
+          payload.hasErrors = true;
+        }
+      } else {
+        writeGuidanceLine(follow.hint);
+      }
+    } else {
+      if (payload.mcp.authenticated) {
+        const handle = payload.mcp.profileHandle ? ` as ${payload.mcp.profileHandle}` : '';
+        const wallet = payload.mcp.sessionWallet ? `, ${shortWallet(payload.mcp.sessionWallet)}` : '';
+        const receipts =
+          payload.mcp.proofsTotal != null ? `, ${payload.mcp.proofsTotal} proofs` : '';
+        const tools = payload.mcp.toolsCount ? `, ${payload.mcp.toolsCount} tools available` : '';
+        logStep('ok', 'profile', `connected${handle}${wallet}${receipts}${tools}`);
+        writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
+        writeGuidanceLine('Run `npx -y -p @proofable/sdk proofable examples` for starter prompts.');
+        if (payload.mountFilePresent) {
+          const agentLabel = payload.mountAgentLabel || payload.mountAgentId || 'project mount';
+          const agentStatus = payload.agentVerified ? ' (verified)' : payload.agentLinkStatus ? ` (${payload.agentLinkStatus})` : '';
+          logStep('ok', 'mount', payload.mountAgentId ? `project mount: ${agentLabel}${agentStatus}` : 'project mount saved');
+        }
+        if (payload.mountNeedsRefresh) {
+          const reason =
+            payload.delegationExpired
+              ? 'permissions expired'
+              : payload.missingDelegation
+                ? 'permissions missing'
+                : 'mount stale';
+          logStep('warn', 'mount', `${reason}. Run \`npx -y -p @proofable/sdk proofable mount ${payload.mountAgentId || '<agentId>'} --apply <host>\``);
+          payload.hasErrors = true;
+        } else if (payload.agentVerified) {
+          logStep('ok', 'agent', 'identity and permissions linked');
+        } else if (payload.mountAgentId || payload.mountFilePresent) {
+          writeGuidanceLine(
+            `Mounted agent is not fully linked yet. Run \`npx -y -p @proofable/sdk proofable mount ${payload.mountAgentId || '<agentId>'} --apply <host>\` after auth.`
+          );
+          payload.hasErrors = true;
+        }
+      } else {
+        if (!payload.mcp.reachable) {
+          logStep('warn', 'profile', 'MCP server unreachable. Check network or try again');
+        } else {
+          logStep('warn', 'profile', 'sign-in expired or invalid.');
+          writeGuidanceLine(follow.hint);
+        }
+      }
+    }
+  } else if (liveAccessKey) {
+    writeGuidanceLine('Saved credential found. Run `npx -y -p @proofable/sdk proofable doctor --live` to confirm live connection.');
+  } else if (hasCodex) {
+    writeGuidanceLine('Codex owns OAuth: run `npx -y -p @proofable/sdk proofable auth --client codex` or `codex mcp login proofable`.');
+  } else {
+    writeGuidanceLine(follow.hint);
+  }
+  writeCliLine('');
+}
+
+async function runDisconnect(options) {
+  const scope = resolveScope(options);
+  if (scope !== 'user') {
+    throw new Error('Disconnect only supports user scope. Remove --project flag.');
+  }
+
+  const cwd = process.cwd();
+  const token = resolveLiveAccessKey(options, scope, cwd);
+  if (!token) {
+    throw new Error(
+      'Credential required. Run `npx -y -p @proofable/sdk proofable disconnect --access-key <token>` or `proofable auth --oauth` for the CLI store.'
+    );
+  }
+
+  try {
+    const isProfileKey = token.startsWith('npk_');
+    const resp = isProfileKey
+      ? await fetch(PROOFABLE_PROFILE_KEY_ENDPOINT, {
+          method: 'DELETE',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          signal: AbortSignal.timeout(10_000),
+        })
+      : await fetch(PROOFABLE_DISCONNECT_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            token,
+            token_type_hint: 'access_token',
+            client_id: PROOFABLE_OAUTH_CLIENT_ID
+          }).toString(),
+          signal: AbortSignal.timeout(10_000),
+        });
+
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body?.error?.message || `Disconnect failed with status ${resp.status}`);
+    }
+  } catch (error) {
+    if (error.message && !error.message.includes('Disconnect failed')) {
+      throw new Error(`Disconnect request failed: ${error.message}`);
+    }
+    throw error;
+  }
+
+  const clients = resolveClients(scope, options.clients);
+  ensureClientSelection(scope, clients);
+
+  const results = runClientOperations(clients, scope, cwd, options.dryRun, client =>
+    installClient(client, scope, '', options.dryRun, cwd, options)
+  );
+
+  const payload = {
+    command: 'disconnect',
+    scope,
+    clients,
+    disconnected: true,
+    results,
+    hasErrors: results.some(result => result.error)
+  };
+
+  if (options.json) {
+    printJson(payload);
+  } else {
+    emitCliBanner(options);
+    writeCliLine(paint('disconnect', 'green'));
+    logStep('ok', 'signed-out', 'MCP configs updated');
+    logStep('next', 'next', hostConnectHint(clients).hint);
+    writeCliLine('');
+  }
+}
+
+async function main() {
+  try {
+    const { command, options } = parseArgs(process.argv.slice(2));
+
+    if (command === 'help') {
+      printUsage(0);
+      return;
+    }
+    if (command === 'auth') {
+      const result = await runAuth(options);
+      if (result) {
+        if (options.json) {
+          printJson(result);
+        } else {
+          printFlowSummary('auth', result.scope, result.results, {
+            nextStep:
+              result.hostSignInHint ||
+              'Run `npx -y -p @proofable/sdk proofable examples`, then ask your assistant to use Proofable.',
+            cliOptions: options
+          });
+        }
+        if (result.hasErrors) {
+          process.exitCode = 1;
+        }
+      }
+      return;
+    }
+    if (command === 'refresh') {
+      await runRefresh(options);
+      return;
+    }
+    if (command === 'status') {
+      runStatus(options);
+      return;
+    }
+    if (command === 'setup') {
+      const setupResult = await runSetup(options);
+      if (setupResult?.hasErrors) {
+        process.exitCode = 1;
+      }
+      return;
+    }
+    if (command === 'doctor') {
+      await runDoctor(options);
+      return;
+    }
+    if (command === 'mount') {
+      await runMount(options);
+      return;
+    }
+    if (command === 'examples') {
+      runExamples(options);
+      return;
+    }
+    if (command === 'disconnect') {
+      await runDisconnect(options);
+      return;
+    }
+
+    process.stderr.write(`Unknown subcommand: ${command}\n`);
+    printUsage(1);
+  } catch (error) {
+    process.stderr.write(`${error?.message || 'Unknown error'}\n`);
+    process.exit(1);
+  }
+}
+
+main();

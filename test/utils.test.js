@@ -1,0 +1,642 @@
+import { describe, it, expect } from 'vitest';
+import { createRequire } from 'module';
+import { Wallet } from 'ethers';
+import * as ed25519 from '@noble/ed25519';
+import bs58 from 'bs58';
+import {
+  constructVerificationMessage,
+  canonicalizePortableProofJson,
+  computePortableProofQHash,
+  verifyPortableProofEnvelope,
+  validateWalletAddress,
+  validateTimestamp,
+  validateQHash,
+  normalizeAddress,
+  createVerificationData,
+  deriveDid,
+  isTerminalStatus,
+  isSuccessStatus,
+  isFailureStatus,
+  formatVerificationStatus,
+  formatTimestamp,
+  isSupportedChain,
+  signMessage,
+  toHexUtf8,
+  withRetry,
+  delay,
+  computeContentHash,
+  PROOFABLE_CONSTANTS,
+  getHostedCheckoutUrl,
+  getHostedAgentCreateUrl,
+  toAgentDelegationMaxSpend
+} from '../utils.js';
+
+const require = createRequire(import.meta.url);
+const cjsUtils = require('../cjs/utils.cjs');
+
+describe('Utils', () => {
+
+  describe('constructVerificationMessage()', () => {
+    it('should create consistent message format', () => {
+      const params = {
+        walletAddress: '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db',
+        signedTimestamp: 1678886400000,
+        data: { content: 'test', owner: '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db' },
+        verifierIds: ['ownership-basic'],
+        chainId: 84532
+      };
+
+      const message = constructVerificationMessage(params);
+
+      expect(typeof message).toBe('string');
+      expect(message).toContain('Portable Proof Verification Request');
+      expect(message).toContain('\nChain: 84532\n');
+      expect(message).toContain('0x742d35cc6634c0532925a3b8d82ab78c0d73c3db');
+      expect(message).toContain('1678886400000');
+      expect(message).toContain('ownership-basic');
+    });
+
+    it('should handle multiple verifiers', () => {
+      const params = {
+        walletAddress: '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db',
+        signedTimestamp: 1678886400000,
+        data: { content: 'test' },
+        verifierIds: ['ownership-basic', 'nft-ownership'],
+        chainId: 84532
+      };
+
+      const message = constructVerificationMessage(params);
+
+      expect(message).toContain('ownership-basic');
+      expect(message).toContain('nft-ownership');
+    });
+
+    it('should keep CommonJS bundle signer format in sync with ESM source', () => {
+      const params = {
+        walletAddress: '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db',
+        signedTimestamp: 1678886400000,
+        data: { content: 'test', owner: '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db' },
+        verifierIds: ['ownership-basic'],
+        chainId: 84532
+      };
+
+      const esmMessage = constructVerificationMessage(params);
+      const cjsMessage = cjsUtils.constructVerificationMessage(params);
+
+      expect(cjsMessage).toBe(esmMessage);
+      expect(cjsMessage).toContain('Portable Proof Verification Request');
+    });
+  });
+
+  describe('portable proof envelopes', () => {
+    it('uses strict canonical JSON for ordering, Unicode, null, and invalid values', () => {
+      const decomposed = 'e\u0301';
+      expect(canonicalizePortableProofJson({ z: null, nested: { b: 2, a: decomposed } }))
+        .toBe('{"nested":{"a":"é","b":2},"z":null}');
+      expect(canonicalizePortableProofJson({ '\uE000': 1, '😀': 2 }))
+        .toBe('{"":1,"😀":2}');
+      expect(() => canonicalizePortableProofJson({ omitted: undefined })).toThrow(/canonical JSON/);
+      expect(() => canonicalizePortableProofJson([undefined])).toThrow(/canonical JSON/);
+    });
+
+    it('verifies a complete EVM envelope offline and binds every data field', async () => {
+      const wallet = new Wallet('0x59c6995e998f97a5a0044976f7d3f0f35f0bfa65c1f9f650f72b87c9b0f4f6e8');
+      const envelope = {
+        did: deriveDid(wallet.address, 84532),
+        walletAddress: wallet.address.toLowerCase(),
+        verifierIds: ['ownership-basic'],
+        data: { content: 'CAIP-380 interoperability fixture', nonce: 'example-1' },
+        signedTimestamp: 1784582400000,
+        chainId: 84532,
+        signatureMethod: 'eip191'
+      };
+      envelope.qHash = computePortableProofQHash(envelope);
+      envelope.signature = await wallet.signMessage(constructVerificationMessage(envelope));
+
+      const result = await verifyPortableProofEnvelope(envelope, { now: envelope.signedTimestamp });
+      expect(result).toMatchObject({
+        valid: true,
+        qHashValid: true,
+        didValid: true,
+        signatureValid: true,
+        fresh: true,
+        requiresChainState: false
+      });
+
+      const changed = { ...envelope, data: { ...envelope.data, nonce: 'example-2' } };
+      expect(computePortableProofQHash(changed)).not.toBe(envelope.qHash);
+      expect((await verifyPortableProofEnvelope(changed, { now: envelope.signedTimestamp })).valid).toBe(false);
+    });
+
+    it('requires exactly one chain representation', () => {
+      expect(() => computePortableProofQHash({
+        did: 'did:pkh:eip155:1:0x0000000000000000000000000000000000000000',
+        verifierIds: ['ownership-basic'],
+        data: { content: 'x' },
+        signedTimestamp: 1784582400000,
+        chain: 'eip155:1',
+        chainId: 1
+      })).toThrow(/exactly one/);
+      expect(() => computePortableProofQHash({
+        did: 'did:pkh:eip155:1:0x0000000000000000000000000000000000000000',
+        verifierIds: ['ownership-basic'],
+        data: { content: 'x' },
+        signedTimestamp: 1784582400000
+      })).toThrow(/exactly one/);
+    });
+
+    it('binds every canonical field and ignores envelope extensions', () => {
+      const base = {
+        did: 'did:pkh:eip155:84532:0x2682f1afa9e879dcea444d8d93895c4bcbf55076',
+        walletAddress: '0x2682f1afa9e879dcea444d8d93895c4bcbf55076',
+        verifierIds: ['ownership-basic'],
+        data: { nested: { b: 2, a: 1 } },
+        signedTimestamp: 1784582400000,
+        chainId: 84532
+      };
+      const qHash = computePortableProofQHash(base);
+      expect(computePortableProofQHash({ ...base, note: 'extension' })).toBe(qHash);
+      expect(computePortableProofQHash({ ...base, did: `${base.did}-changed` })).not.toBe(qHash);
+      expect(computePortableProofQHash({ ...base, verifierIds: ['wallet-risk'] })).not.toBe(qHash);
+      expect(computePortableProofQHash({ ...base, data: { nested: { a: 2, b: 2 } } })).not.toBe(qHash);
+      expect(computePortableProofQHash({ ...base, signedTimestamp: base.signedTimestamp + 1 })).not.toBe(qHash);
+      expect(computePortableProofQHash({ ...base, chainId: 1 })).not.toBe(qHash);
+      expect(computePortableProofQHash({ ...base, data: { nested: { a: 1, b: 2 } } })).toBe(qHash);
+    });
+
+    it('verifies a Solana-style Ed25519 envelope offline', async () => {
+      const privateKey = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+      const walletAddress = bs58.encode(ed25519.getPublicKey(privateKey));
+      const envelope = {
+        did: deriveDid(walletAddress, 'solana:mainnet'),
+        walletAddress,
+        verifierIds: ['ownership-basic'],
+        data: { content: 'universal portable proof' },
+        signedTimestamp: 1784582400000,
+        chain: 'solana:mainnet',
+        signatureMethod: 'ed25519'
+      };
+      envelope.qHash = computePortableProofQHash(envelope);
+      envelope.signature = bs58.encode(ed25519.sign(
+        new TextEncoder().encode(constructVerificationMessage(envelope)),
+        privateKey
+      ));
+
+      await expect(verifyPortableProofEnvelope(envelope, { now: envelope.signedTimestamp }))
+        .resolves.toMatchObject({ valid: true, signatureValid: true, qHashValid: true });
+    });
+  });
+
+  describe('validateWalletAddress()', () => {
+    it('should validate correct addresses', () => {
+      expect(validateWalletAddress('0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db')).toBe(true);
+      expect(validateWalletAddress('0x0000000000000000000000000000000000000000')).toBe(true);
+    });
+
+    it('should reject invalid addresses', () => {
+      expect(validateWalletAddress('')).toBe(false);
+      expect(validateWalletAddress('742d35Cc6634C0532925a3b8D82AB78c0D73C3Db')).toBe(false); // No 0x
+      expect(validateWalletAddress('0x742d35')).toBe(false); // Too short
+      expect(validateWalletAddress('0x742d35Cc6634C0532925a3b8D82AB78c0D73C3DbXX')).toBe(false); // Too long
+      expect(validateWalletAddress('0xZZZd35Cc6634C0532925a3b8D82AB78c0D73C3Db')).toBe(false); // Invalid chars
+      expect(validateWalletAddress(null)).toBe(false);
+      expect(validateWalletAddress(undefined)).toBe(false);
+      expect(validateWalletAddress(123)).toBe(false);
+    });
+  });
+
+  describe('validateTimestamp()', () => {
+    it('should validate recent timestamps', () => {
+      const now = Date.now();
+      expect(validateTimestamp(now)).toBe(true);
+      expect(validateTimestamp(now - 60000)).toBe(true); // 1 minute ago
+      expect(validateTimestamp(now - 299000)).toBe(true); // 4 min 59 sec ago (within default max)
+    });
+
+    it('should reject old timestamps', () => {
+      const now = Date.now();
+      expect(validateTimestamp(now - 600000)).toBe(false); // 10 minutes ago
+      expect(validateTimestamp(now - 3600000)).toBe(false); // 1 hour ago
+    });
+
+    it('should reject future timestamps', () => {
+      const future = Date.now() + 60000; // 1 minute in future
+      expect(validateTimestamp(future)).toBe(false);
+    });
+
+    it('should respect custom max age', () => {
+      const now = Date.now();
+      const tenMinutesAgo = now - 600000;
+
+      expect(validateTimestamp(tenMinutesAgo, 300000)).toBe(false); // 5min max
+      expect(validateTimestamp(tenMinutesAgo, 900000)).toBe(true);  // 15min max
+    });
+
+    it('should handle invalid inputs', () => {
+      expect(validateTimestamp()).toBe(false);
+      expect(validateTimestamp(null)).toBe(false);
+      expect(validateTimestamp('invalid')).toBe(false);
+      expect(validateTimestamp(-1)).toBe(false);
+    });
+  });
+
+  describe('createVerificationData()', () => {
+    it('should create basic verification data', () => {
+      const data = createVerificationData(
+        'test content',
+        '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db'
+      );
+
+      expect(data).toEqual({
+        content: 'test content',
+        owner: '0x742d35cc6634c0532925a3b8d82ab78c0d73c3db', // Addresses are normalized to lowercase
+        reference: {
+          type: 'other',
+          id: expect.any(String)
+        }
+      });
+    });
+
+    it('should accept custom reference', () => {
+      const customRef = { type: 'custom', id: 'test123' };
+      const data = createVerificationData(
+        'test content',
+        '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db',
+        customRef
+      );
+
+      expect(data.reference).toEqual(customRef);
+    });
+  });
+
+  describe('deriveDid()', () => {
+    it('should create DID from address', () => {
+      const did = deriveDid('0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db');
+      expect(did).toBe('did:pkh:eip155:84532:0x742d35cc6634c0532925a3b8d82ab78c0d73c3db'); // DID standard uses lowercase
+    });
+
+    it('should accept custom chain ID', () => {
+      const did = deriveDid('0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db', 1);
+      expect(did).toBe('did:pkh:eip155:1:0x742d35cc6634c0532925a3b8d82ab78c0d73c3db'); // DID standard uses lowercase
+    });
+
+    it('should handle lowercase addresses', () => {
+      const did = deriveDid('0x742d35cc6634c0532925a3b8d82ab78c0d73c3db');
+      expect(did).toBe('did:pkh:eip155:84532:0x742d35cc6634c0532925a3b8d82ab78c0d73c3db');
+    });
+  });
+
+  describe('Status Checking Functions', () => {
+    describe('isTerminalStatus()', () => {
+      it('should identify terminal statuses', () => {
+        expect(isTerminalStatus('verified')).toBe(true);
+        expect(isTerminalStatus('verified_crosschain_propagated')).toBe(true);
+        expect(isTerminalStatus('verified_no_verifiers')).toBe(true);
+        expect(isTerminalStatus('rejected')).toBe(true);
+        expect(isTerminalStatus('rejected_verifier_failure')).toBe(true);
+        expect(isTerminalStatus('error_processing_exception')).toBe(true);
+        expect(isTerminalStatus('not_found')).toBe(true);
+      });
+
+      it('should identify non-terminal statuses', () => {
+        expect(isTerminalStatus('pending')).toBe(false);
+        expect(isTerminalStatus('processing')).toBe(false);
+        expect(isTerminalStatus('processing_verifiers')).toBe(false);
+        expect(isTerminalStatus('signing')).toBe(false);
+      });
+    });
+
+    describe('isSuccessStatus()', () => {
+      it('should identify success statuses', () => {
+        expect(isSuccessStatus('verified')).toBe(true);
+        expect(isSuccessStatus('verified_no_verifiers')).toBe(true);
+        expect(isSuccessStatus('verified_crosschain_propagated')).toBe(true);
+        expect(isSuccessStatus('partially_verified')).toBe(true);
+      });
+
+      it('should identify non-success statuses', () => {
+        expect(isSuccessStatus('pending')).toBe(false);
+        expect(isSuccessStatus('failed')).toBe(false);
+        expect(isSuccessStatus('error')).toBe(false);
+      });
+    });
+
+    describe('isFailureStatus()', () => {
+      it('should identify failure statuses', () => {
+        expect(isFailureStatus('rejected')).toBe(true);
+        expect(isFailureStatus('rejected_verifier_failure')).toBe(true);
+        expect(isFailureStatus('rejected_zk_initiation_failure')).toBe(true);
+        expect(isFailureStatus('error_processing_exception')).toBe(true);
+        expect(isFailureStatus('not_found')).toBe(true);
+      });
+
+      it('should identify non-failure statuses', () => {
+        expect(isFailureStatus('verified')).toBe(false);
+        expect(isFailureStatus('pending')).toBe(false);
+        expect(isFailureStatus('processing')).toBe(false);
+      });
+    });
+  });
+
+  describe('formatVerificationStatus()', () => {
+    it('should format status objects correctly', () => {
+      const formatted = formatVerificationStatus('verified');
+
+      expect(formatted).toHaveProperty('label');
+      expect(formatted).toHaveProperty('description');
+      expect(formatted).toHaveProperty('color');
+      expect(formatted).toHaveProperty('category');
+
+      expect(typeof formatted.label).toBe('string');
+      expect(typeof formatted.description).toBe('string');
+      expect(typeof formatted.color).toBe('string');
+      expect(typeof formatted.category).toBe('string');
+    });
+
+    it('should handle unknown statuses', () => {
+      const formatted = formatVerificationStatus('unknown_status');
+
+      expect(formatted.label).toBe('Unknown Status'); // Actual implementation capitalizes and formats
+      expect(formatted.category).toBe('unknown');
+    });
+  });
+
+  describe('delay()', () => {
+    it('should resolve after specified time', async () => {
+      const start = Date.now();
+      await delay(50);
+      const elapsed = Date.now() - start;
+
+      expect(elapsed).toBeGreaterThanOrEqual(45); // Account for timing variance
+      expect(elapsed).toBeLessThan(100);
+    });
+  });
+
+  describe('computeContentHash()', () => {
+    it('should generate consistent hashes', async () => {
+      const hash1 = await computeContentHash('test content');
+      const hash2 = await computeContentHash('test content');
+
+      expect(hash1).toBe(hash2);
+      expect(typeof hash1).toBe('string');
+      expect(hash1.length).toBeGreaterThan(0);
+    });
+
+    it('should generate different hashes for different content', async () => {
+      const hash1 = await computeContentHash('content 1');
+      const hash2 = await computeContentHash('content 2');
+
+      expect(hash1).not.toBe(hash2);
+    });
+  });
+
+  describe('validateQHash()', () => {
+    it('should validate correct qHash format', () => {
+      expect(validateQHash('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')).toBe(true);
+    });
+
+    it('should reject invalid formats', () => {
+      expect(validateQHash('invalid')).toBe(false);
+      expect(validateQHash('0x123')).toBe(false); // Too short
+      expect(validateQHash('1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')).toBe(false); // Missing 0x
+      expect(validateQHash(null)).toBe(false);
+      expect(validateQHash('')).toBe(false);
+    });
+  });
+
+  describe('normalizeAddress()', () => {
+    it('should normalize valid address to lowercase', () => {
+      const address = '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db';
+      expect(normalizeAddress(address)).toBe('0x742d35cc6634c0532925a3b8d82ab78c0d73c3db');
+    });
+
+    it('should throw on invalid address', () => {
+      expect(() => normalizeAddress('invalid')).toThrow('Invalid wallet address format');
+    });
+  });
+
+  describe('formatTimestamp()', () => {
+    it('should format timestamp to readable string', () => {
+      const timestamp = 1678886400000;
+      const formatted = formatTimestamp(timestamp);
+
+      expect(typeof formatted).toBe('string');
+      expect(formatted.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('getHostedCheckoutUrl()', () => {
+    it('keeps login separate from verifier checkout parameters', () => {
+      const url = getHostedCheckoutUrl({
+        verifiers: ['ownership-basic'],
+        mode: 'popup',
+        origin: 'https://app.example',
+        returnUrl: 'https://app.example/callback',
+        intent: 'login'
+      });
+
+      expect(url).toBe(
+        'https://proofable.me/verify?returnUrl=https%3A%2F%2Fapp.example%2Fcallback&mode=popup&intent=login&origin=https%3A%2F%2Fapp.example'
+      );
+    });
+
+    it('should include oauthProvider when provided', () => {
+      const url = getHostedCheckoutUrl({
+        verifiers: ['ownership-social'],
+        mode: 'popup',
+        origin: 'https://app.example',
+        returnUrl: 'https://app.example/callback',
+        oauthProvider: 'github'
+      });
+
+      expect(url).toBe(
+        'https://proofable.me/verify?returnUrl=https%3A%2F%2Fapp.example%2Fcallback&verifiers=ownership-social&mode=popup&origin=https%3A%2F%2Fapp.example&oauthProvider=github'
+      );
+    });
+
+    it('lets gateId own checkout policy when conflicting preset is provided', () => {
+      const url = getHostedCheckoutUrl({
+        gateId: 'gate-123',
+        preset: 'human'
+      });
+
+      expect(url).toBe('https://proofable.me/verify?gateId=gate-123');
+      expect(url.includes('origin=')).toBe(false);
+    });
+  });
+
+  describe('getHostedAgentCreateUrl()', () => {
+    it('builds the shared-wallet identity-only flow', () => {
+      const url = new URL(
+        getHostedAgentCreateUrl({
+          agentId: 'self-agent',
+          agentWallet: '0x1111111111111111111111111111111111111111',
+          controllerWallet: '0x1111111111111111111111111111111111111111',
+          returnUrl: 'https://partner.example/callback'
+        })
+      );
+
+      expect(url.searchParams.get('verifiers')).toBe('agent-identity');
+      expect(url.searchParams.get('agentId')).toBe('self-agent');
+      expect(url.searchParams.get('returnUrl')).toBe('https://partner.example/callback');
+    });
+
+    it('builds a delegation-only callback after dedicated-wallet identity', () => {
+      const url = new URL(
+        getHostedAgentCreateUrl({
+          agentId: 'dedicated-agent',
+          agentWallet: '0x1111111111111111111111111111111111111111',
+          controllerWallet: '0x2222222222222222222222222222222222222222',
+          identityQHash: `0x${'a'.repeat(64)}`,
+          returnUrl: 'https://partner.example/callback',
+          scope: 'global',
+          maxSpend: '15000000',
+          allowedActions: ['read_context'],
+          deniedActions: ['send_message'],
+          runtimePolicy: { requiresHumanApproval: true }
+        })
+      );
+
+      expect(url.searchParams.get('verifiers')).toBe('agent-delegation');
+      expect(url.searchParams.get('scope')).toBe('global');
+      expect(url.searchParams.get('maxSpend')).toBe('15000000');
+      expect(JSON.parse(url.searchParams.get('prefillAllowedActions'))).toEqual([
+        'read_context'
+      ]);
+      expect(JSON.parse(url.searchParams.get('prefillRuntimePolicy'))).toEqual({
+        requiresHumanApproval: true
+      });
+    });
+
+    it('rejects a two-wallet hosted flow before agent identity exists', () => {
+      expect(() =>
+        getHostedAgentCreateUrl({
+          agentId: 'dedicated-agent',
+          agentWallet: '0x1111111111111111111111111111111111111111',
+          controllerWallet: '0x2222222222222222222222222222222222222222'
+        })
+      ).toThrow(/sign agent-identity first/i);
+    });
+  });
+
+  describe('isSupportedChain()', () => {
+    it('should return true for default chain ID', () => {
+      expect(isSupportedChain(PROOFABLE_CONSTANTS.HUB_CHAIN_ID)).toBe(true);
+    });
+
+    it('should return true for testnet chains', () => {
+      PROOFABLE_CONSTANTS.TESTNET_CHAINS.forEach(chainId => {
+        expect(isSupportedChain(chainId)).toBe(true);
+      });
+    });
+
+    it('should return false for unsupported chains', () => {
+      expect(isSupportedChain(1)).toBe(false); // Ethereum mainnet
+      expect(isSupportedChain(137)).toBe(false); // Polygon mainnet
+      expect(isSupportedChain(999999)).toBe(false); // Invalid chain
+    });
+  });
+
+  describe('withRetry()', () => {
+    it('should retry failed function calls', async () => {
+      let attempts = 0;
+      const fn = async () => {
+        attempts++;
+        if (attempts < 3) throw new Error('Test error');
+        return 'success';
+      };
+
+      const result = await withRetry(fn, { maxAttempts: 3, baseDelay: 10 });
+      expect(result).toBe('success');
+      expect(attempts).toBe(3);
+    });
+
+    it('should throw error after max attempts', async () => {
+      const fn = async () => { throw new Error('Always fails'); };
+
+      await expect(withRetry(fn, { maxAttempts: 2, baseDelay: 10 }))
+        .rejects.toThrow('Always fails');
+    });
+
+    it('should return immediately on success', async () => {
+      const fn = async () => 'immediate success';
+
+      const result = await withRetry(fn);
+      expect(result).toBe('immediate success');
+    });
+  });
+
+  describe('toHexUtf8()', () => {
+    it('should encode UTF-8 strings as 0x hex', () => {
+      expect(toHexUtf8('hello')).toBe('0x68656c6c6f');
+      expect(toHexUtf8('Proofable')).toBe('0x50726f6f6661626c65');
+    });
+  });
+
+  describe('signMessage()', () => {
+    it('should retry personal_sign with hex payload on encoding errors', async () => {
+      const calls = [];
+      const provider = {
+        request: async ({ method, params }) => {
+          calls.push({ method, params });
+          if (method === 'eth_accounts') {
+            return ['0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db'];
+          }
+          if (method === 'personal_sign' && params[0] === 'test message') {
+            throw new Error('invalid byte sequence');
+          }
+          if (method === 'personal_sign' && String(params[0]).startsWith('0x')) {
+            return '0xsignature';
+          }
+          throw new Error('unexpected call');
+        }
+      };
+
+      const signature = await signMessage({
+        provider,
+        walletAddress: '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db',
+        message: 'test message'
+      });
+
+      expect(signature).toBe('0xsignature');
+      expect(calls.some((call) => call.method === 'personal_sign' && String(call.params[0]).startsWith('0x'))).toBe(true);
+    });
+  });
+
+  describe('toAgentDelegationMaxSpend()', () => {
+    it('converts USDC-style human amounts to base units', () => {
+      expect(toAgentDelegationMaxSpend('25', 6)).toBe('25000000');
+      expect(toAgentDelegationMaxSpend('100.50', 6)).toBe('100500000');
+      expect(toAgentDelegationMaxSpend('.5', 6)).toBe('500000');
+    });
+
+    it('handles ETH-scale decimals', () => {
+      expect(toAgentDelegationMaxSpend('1', 18)).toBe('1000000000000000000');
+    });
+
+    it('rejects invalid input', () => {
+      expect(() => toAgentDelegationMaxSpend('', 6)).toThrow();
+      expect(() => toAgentDelegationMaxSpend('1.2.3', 6)).toThrow();
+      expect(() => toAgentDelegationMaxSpend('1', 79)).toThrow();
+      expect(() => toAgentDelegationMaxSpend('-1', 6)).toThrow();
+    });
+  });
+
+  describe('PROOFABLE_CONSTANTS', () => {
+    it('should have correct default chain ID', () => {
+      expect(PROOFABLE_CONSTANTS.HUB_CHAIN_ID).toBe(84532);
+    });
+
+    it('should have correct testnet chains', () => {
+      expect(PROOFABLE_CONSTANTS.TESTNET_CHAINS).toEqual([11155111, 11155420, 421614, 80002]);
+    });
+
+    it('should have default verifiers', () => {
+      expect(PROOFABLE_CONSTANTS.DEFAULT_VERIFIERS).toEqual([
+        'ownership-basic',
+        'nft-ownership',
+        'token-holding'
+      ]);
+    });
+  });
+});

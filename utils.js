@@ -1,0 +1,1369 @@
+import { SDKError, ApiError, ValidationError } from './errors.js';
+import * as ed25519 from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha512';
+import bs58 from 'bs58';
+import sha3Package from 'js-sha3';
+
+const { shake256 } = sha3Package;
+ed25519.etc.sha512Sync = (...messages) => sha512(ed25519.etc.concatBytes(...messages));
+
+export const PORTABLE_PROOF_SIGNER_HEADER = 'Portable Proof Verification Request';
+
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+function encodeBase58Bytes(input) {
+  let source;
+  if (input instanceof Uint8Array) {
+    source = input;
+  } else if (input instanceof ArrayBuffer) {
+    source = new Uint8Array(input);
+  } else if (ArrayBuffer.isView(input)) {
+    source = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  } else if (typeof Buffer !== 'undefined' && typeof Buffer.isBuffer === 'function' && Buffer.isBuffer(input)) {
+    source = new Uint8Array(input);
+  } else {
+    throw new SDKError('Unsupported non-EVM signature byte format', 'INVALID_SIGNATURE_FORMAT');
+  }
+
+  if (source.length === 0) return '';
+
+  let zeroes = 0;
+  while (zeroes < source.length && source[zeroes] === 0) {
+    zeroes++;
+  }
+
+  const iFactor = Math.log(256) / Math.log(58);
+  const size = (((source.length - zeroes) * iFactor) + 1) >>> 0;
+  const b58 = new Uint8Array(size);
+
+  let length = 0;
+  for (let i = zeroes; i < source.length; i++) {
+    let carry = source[i];
+    let j = 0;
+    for (let k = size - 1; (carry !== 0 || j < length) && k >= 0; k--, j++) {
+      carry += 256 * b58[k];
+      b58[k] = carry % 58;
+      carry = (carry / 58) | 0;
+    }
+    length = j;
+  }
+
+  let it = size - length;
+  while (it < size && b58[it] === 0) {
+    it++;
+  }
+
+  let out = BASE58_ALPHABET[0].repeat(zeroes);
+  for (; it < size; it++) {
+    out += BASE58_ALPHABET[b58[it]];
+  }
+  return out;
+}
+
+function deterministicStringify(obj) {
+  if (obj === null || obj === undefined) {
+    return JSON.stringify(obj);
+  }
+
+  if (typeof obj !== 'object') {
+    if (typeof obj === 'string') return JSON.stringify(obj.normalize('NFC'));
+    return JSON.stringify(obj);
+  }
+
+  if (Array.isArray(obj)) {
+    return `[${  obj.map(item => (item === undefined ? 'null' : deterministicStringify(item))).join(',')  }]`;
+  }
+
+  const sortedKeys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
+  const pairs = sortedKeys.map(key =>
+    `${JSON.stringify(key)  }:${  deterministicStringify(obj[key])}`
+  );
+
+  return `{${  pairs.join(',')  }}`;
+}
+
+function compareUnicodeCodePoints(left, right) {
+  const a = Array.from(left, (character) => character.codePointAt(0));
+  const b = Array.from(right, (character) => character.codePointAt(0));
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+
+function canonicalizePortableProofValue(value, path = '$') {
+  if (value === null) return 'null';
+  const valueType = typeof value;
+  if (valueType === 'string') return JSON.stringify(value.normalize('NFC'));
+  if (valueType === 'boolean') return value ? 'true' : 'false';
+  if (valueType === 'number') {
+    if (!Number.isFinite(value)) throw new SDKError(`${path} must contain only finite JSON numbers`, 'INVALID_CANONICAL_JSON');
+    return JSON.stringify(Object.is(value, -0) ? 0 : value);
+  }
+  if (valueType === 'undefined' || valueType === 'function' || valueType === 'symbol' || valueType === 'bigint') {
+    throw new SDKError(`${path} contains a value that is not valid canonical JSON`, 'INVALID_CANONICAL_JSON');
+  }
+  if (valueType !== 'object') throw new SDKError(`${path} is not valid canonical JSON`, 'INVALID_CANONICAL_JSON');
+
+  if (Array.isArray(value)) {
+    const items = [];
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) {
+        throw new SDKError(`${path}[${index}] is a sparse array entry`, 'INVALID_CANONICAL_JSON');
+      }
+      items.push(canonicalizePortableProofValue(value[index], `${path}[${index}]`));
+    }
+    return `[${items.join(',')}]`;
+  }
+
+  const entries = [];
+  const normalizedKeys = new Set();
+  for (const key of Object.keys(value)) {
+    const normalizedKey = key.normalize('NFC');
+    if (normalizedKeys.has(normalizedKey)) {
+      throw new SDKError(`${path} contains duplicate keys after NFC normalization`, 'INVALID_CANONICAL_JSON');
+    }
+    normalizedKeys.add(normalizedKey);
+    entries.push({ key: normalizedKey, value: value[key], sourceKey: key });
+  }
+  entries.sort((a, b) => compareUnicodeCodePoints(a.key, b.key));
+  return `{${entries.map(({ key, value: entryValue, sourceKey }) =>
+    `${JSON.stringify(key)}:${canonicalizePortableProofValue(entryValue, `${path}.${sourceKey}`)}`).join(',')}}`;
+}
+
+export function canonicalizePortableProofJson(value) {
+  return canonicalizePortableProofValue(value);
+}
+
+function chainLineForPortableProofSigner(chain, chainId) {
+  if (typeof chain === 'string' && chain.length > 0) {
+    const m = chain.match(/^eip155:(\d+)$/);
+    if (m) return Number(m[1]);
+    return chain;
+  }
+  if (typeof chainId === 'number' && Number.isFinite(chainId) && chainId > 0) {
+    return chainId;
+  }
+  throw new SDKError('chainId is required (or provide chain for universal mode)', 'INVALID_CHAIN_CONTEXT');
+}
+
+export function constructVerificationMessage({ walletAddress, signedTimestamp, data, verifierIds, chainId, chain }) {
+  if (!walletAddress || typeof walletAddress !== 'string') {
+    throw new SDKError('walletAddress is required and must be a string', 'INVALID_WALLET_ADDRESS');
+  }
+  if (!signedTimestamp || typeof signedTimestamp !== 'number') {
+    throw new SDKError('signedTimestamp is required and must be a number', 'INVALID_TIMESTAMP');
+  }
+  if (!data || typeof data !== 'object') {
+    throw new SDKError('data is required and must be an object', 'INVALID_DATA');
+  }
+  if (!Array.isArray(verifierIds) || verifierIds.length === 0) {
+    throw new SDKError('verifierIds is required and must be a non-empty array', 'INVALID_VERIFIER_IDS');
+  }
+
+  const hasChain = typeof chain === 'string' && chain.length > 0;
+  const hasChainId = typeof chainId === 'number' && Number.isFinite(chainId) && chainId > 0;
+  if (hasChain === hasChainId) {
+    throw new SDKError('provide exactly one of chain or chainId', 'INVALID_CHAIN_CONTEXT');
+  }
+  if (typeof chain === 'string' && chain.length > 0 && (!chain.includes(':'))) {
+    throw new SDKError('chain must be a "namespace:reference" string', 'INVALID_CHAIN');
+  }
+  if (!hasChain && typeof chainId !== 'number') {
+    throw new SDKError('chainId must be a number when provided', 'INVALID_CHAIN_ID');
+  }
+
+  const chainLine = chainLineForPortableProofSigner(chain, chainId);
+
+  const namespace = (typeof chain === 'string' && chain.includes(':')) ? chain.split(':')[0] : 'eip155';
+  const normalizedWalletAddress = namespace === 'eip155' ? walletAddress.toLowerCase() : walletAddress;
+
+  const dataString = canonicalizePortableProofJson(data);
+
+  const messageComponents = [
+    PORTABLE_PROOF_SIGNER_HEADER,
+    `Wallet: ${normalizedWalletAddress}`,
+    `Chain: ${chainLine}`,
+    `Verifiers: ${verifierIds.join(',')}`,
+    `Data: ${dataString}`,
+    `Timestamp: ${signedTimestamp}`
+  ];
+
+  return messageComponents.join('\n').normalize('NFC');
+}
+
+function portableProofCanonicalSubset(envelope) {
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
+    throw new SDKError('portable proof envelope must be an object', 'INVALID_PORTABLE_PROOF');
+  }
+  const hasChain = typeof envelope.chain === 'string' && envelope.chain.length > 0;
+  const hasChainId = typeof envelope.chainId === 'number' && Number.isFinite(envelope.chainId) && envelope.chainId > 0;
+  if (hasChain === hasChainId) {
+    throw new SDKError('portable proof must contain exactly one of chain or chainId', 'INVALID_CHAIN_CONTEXT');
+  }
+  if (typeof envelope.did !== 'string' || !envelope.did) {
+    throw new SDKError('portable proof did is required', 'INVALID_PORTABLE_PROOF');
+  }
+  if (!Array.isArray(envelope.verifierIds) || envelope.verifierIds.length === 0) {
+    throw new SDKError('portable proof verifierIds are required', 'INVALID_VERIFIER_IDS');
+  }
+  if (!envelope.data || typeof envelope.data !== 'object') {
+    throw new SDKError('portable proof data is required', 'INVALID_DATA');
+  }
+  if (typeof envelope.signedTimestamp !== 'number' || !Number.isFinite(envelope.signedTimestamp)) {
+    throw new SDKError('portable proof signedTimestamp is required', 'INVALID_TIMESTAMP');
+  }
+  return {
+    did: envelope.did,
+    verifierIds: envelope.verifierIds,
+    data: envelope.data,
+    signedTimestamp: envelope.signedTimestamp,
+    ...(hasChain ? { chain: envelope.chain } : { chainId: envelope.chainId })
+  };
+}
+
+/** Compute the CAIP-380 SHAKE-256 anchor for a complete portable proof envelope. */
+export function computePortableProofQHash(envelope) {
+  const canonical = canonicalizePortableProofJson(portableProofCanonicalSubset(envelope));
+  return `0x${shake256(canonical, 256)}`;
+}
+
+/**
+ * Verify a portable proof without calling Proofable.
+ * EOA and Ed25519 signatures are fully offline. Smart-account signatures return
+ * `requiresChainState` unless a provider is supplied for an EIP-1271 lookup.
+ */
+export async function verifyPortableProofEnvelope(envelope, options = {}) {
+  const errors = [];
+  let computedQHash = null;
+  try {
+    computedQHash = computePortableProofQHash(envelope);
+  } catch (error) {
+    return { valid: false, qHashValid: false, signatureValid: false, errors: [error.message] };
+  }
+
+  const qHashValid = typeof envelope.qHash === 'string' &&
+    envelope.qHash.toLowerCase() === computedQHash.toLowerCase();
+  if (!qHashValid) errors.push('qHash does not match the canonical envelope');
+
+  const chainContext = envelope.chain ?? envelope.chainId;
+  const expectedDid = deriveDid(envelope.walletAddress, chainContext);
+  const didValid = expectedDid === envelope.did;
+  if (!didValid) errors.push('did does not match walletAddress and chain context');
+
+  const message = constructVerificationMessage(envelope);
+  const method = String(envelope.signatureMethod || (envelope.chain ? 'ed25519' : 'eip191')).toLowerCase();
+  let signatureValid = false;
+  let signer = null;
+  let requiresChainState = false;
+
+  if (method === 'ed25519') {
+    try {
+      const namespace = String(envelope.chain || '').split(':')[0];
+      const publicKeyText = namespace === 'near' && envelope.walletAddress.startsWith('ed25519:')
+        ? envelope.walletAddress.slice(8)
+        : envelope.walletAddress;
+      const publicKey = bs58.decode(publicKeyText);
+      const signatureText = String(envelope.signature || '').replace(/^ed25519:/, '');
+      const signature = /^(0x)?[a-fA-F0-9]{128}$/.test(signatureText)
+        ? Uint8Array.from(signatureText.replace(/^0x/, '').match(/.{2}/g).map((byte) => Number.parseInt(byte, 16)))
+        : bs58.decode(signatureText);
+      signatureValid = await ed25519.verify(signature, new TextEncoder().encode(message), publicKey);
+      signer = signatureValid ? envelope.walletAddress : null;
+    } catch (error) {
+      errors.push(`Ed25519 signature verification failed: ${error.message}`);
+    }
+  } else {
+    let evmError = null;
+    try {
+      const { verifyMessage } = await import('ethers');
+      signer = verifyMessage(message, envelope.signature);
+      signatureValid = signer.toLowerCase() === envelope.walletAddress.toLowerCase();
+    } catch (error) {
+      evmError = error;
+    }
+
+    if (!signatureValid && options.provider) {
+      try {
+        const { Contract, hashMessage } = await import('ethers');
+        const contract = new Contract(
+          envelope.walletAddress,
+          ['function isValidSignature(bytes32,bytes) view returns (bytes4)'],
+          options.provider
+        );
+        const magic = await contract.isValidSignature(hashMessage(message), envelope.signature);
+        signatureValid = String(magic).toLowerCase() === '0x1626ba7e';
+        signer = signatureValid ? envelope.walletAddress : signer;
+      } catch (error) {
+        evmError = error;
+      }
+    } else if (!signatureValid) {
+      requiresChainState = true;
+    }
+
+    if (!signatureValid && options.provider && evmError) {
+      errors.push(`EVM signature verification failed: ${evmError.message}`);
+    }
+  }
+
+  if (!signatureValid && !requiresChainState) errors.push('signature is invalid');
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const maxAgeMs = Number.isFinite(options.maxAgeMs) ? options.maxAgeMs : 300_000;
+  const maxFutureMs = Number.isFinite(options.maxFutureMs) ? options.maxFutureMs : 60_000;
+  const ageMs = now - envelope.signedTimestamp;
+  const fresh = ageMs <= maxAgeMs && ageMs >= -maxFutureMs;
+
+  return {
+    valid: qHashValid && didValid && signatureValid,
+    qHashValid,
+    didValid,
+    signatureValid,
+    requiresChainState,
+    computedQHash,
+    signer,
+    fresh,
+    ageMs,
+    errors
+  };
+}
+
+export function validateWalletAddress(address) {
+  if (!address || typeof address !== 'string') {
+    return false;
+  }
+
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+export function validateUniversalAddress(address, chain) {
+  if (!address || typeof address !== 'string') return false;
+  const value = address.trim();
+  if (!value) return false;
+
+  const chainRef = typeof chain === 'string' ? chain.trim().toLowerCase() : '';
+  const namespace = chainRef.includes(':') ? chainRef.split(':')[0] : '';
+
+  if (validateWalletAddress(value)) return true;
+  if (namespace === 'eip155') return false;
+
+  if (namespace === 'solana') {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+  }
+
+  if (namespace === 'bip122') {
+    return /^(bc1|tb1|bcrt1)[a-z0-9]{11,87}$/.test(value.toLowerCase()) ||
+      /^[13mn2][a-km-zA-HJ-NP-Z1-9]{25,62}$/.test(value);
+  }
+
+  if (namespace === 'near') {
+    return /^[a-z0-9._-]{2,64}$/.test(value);
+  }
+
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$/.test(value);
+}
+
+export function validateTimestamp(timestamp, maxAgeMs = 5 * 60 * 1000) {
+  if (!timestamp || typeof timestamp !== 'number') {
+    return false;
+  }
+
+  const now = Date.now();
+  const age = now - timestamp;
+
+  return age >= 0 && age <= maxAgeMs;
+}
+
+export function createVerificationData(content, owner, reference = null) {
+  const stableRefId = (value) => {
+    const str = typeof value === 'string' ? value : JSON.stringify(value);
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0; // 32-bit
+    }
+    const hex = Math.abs(hash).toString(16).padStart(8, '0');
+    return `ref-id:${hex}:${str.length}`;
+  };
+
+  return {
+    content,
+    owner: validateWalletAddress(owner) ? owner.toLowerCase() : owner,
+    reference: reference || {
+      type: 'other',
+      id: stableRefId(content)
+    }
+  };
+}
+
+export function deriveDid(address, chainIdOrChain) {
+  if (!address || typeof address !== 'string') {
+    throw new SDKError('deriveDid: address is required', 'INVALID_ARGUMENT');
+  }
+
+  const chainContext = chainIdOrChain || PROOFABLE_CONSTANTS.HUB_CHAIN_ID;
+  const isCAIP = typeof chainContext === 'string' && chainContext.includes(':');
+
+  if (isCAIP) {
+    const [namespace, segment] = chainContext.split(':');
+    const normalized = (namespace === 'eip155') ? address.toLowerCase() : address;
+    return `did:pkh:${namespace}:${segment}:${normalized}`;
+  } else {
+    if (typeof chainContext !== 'number') {
+      throw new SDKError('deriveDid: chainId (number) or chain (namespace:reference string) is required', 'INVALID_ARGUMENT');
+    }
+    return `did:pkh:eip155:${chainContext}:${address.toLowerCase()}`;
+  }
+}
+
+export async function resolveDID(params, options = {}) {
+  const endpointPath = options.endpoint || '/api/v1/profile/did/resolve';
+  const apiUrl = typeof options.apiUrl === 'string' ? options.apiUrl.trim() : '';
+
+  const resolveEndpoint = (path) => {
+    if (!path || typeof path !== 'string') return null;
+    const trimmedPath = path.trim();
+    if (!trimmedPath) return null;
+    if (/^https?:\/\//i.test(trimmedPath)) return trimmedPath;
+    if (trimmedPath.startsWith('/')) {
+      if (!apiUrl) return trimmedPath;
+      try {
+        return new URL(trimmedPath, apiUrl.endsWith('/') ? apiUrl : `${apiUrl}/`).toString();
+      } catch {
+        return null;
+      }
+    }
+    const base = apiUrl || PROOFABLE_CONSTANTS.API_BASE_URL;
+    if (!base || typeof base !== 'string') return null;
+    try {
+      return new URL(trimmedPath, base.endsWith('/') ? base : `${base}/`).toString();
+    } catch {
+      return null;
+    }
+  };
+
+  const endpoint = resolveEndpoint(endpointPath);
+  if (!endpoint) {
+    throw new SDKError('resolveDID requires a valid endpoint', 'INVALID_ENDPOINT');
+  }
+
+  const payload = {
+    walletAddress: params?.walletAddress,
+    chainId: params?.chainId,
+    chain: params?.chain
+  };
+
+  const isRelative = endpoint.startsWith('/') || !/^https?:\/\//i.test(endpoint);
+  const credentialsMode = options.credentials !== undefined
+    ? options.credentials
+    : (isRelative ? 'same-origin' : 'omit');
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(options.headers || {})
+      },
+      body: JSON.stringify(payload),
+      credentials: credentialsMode
+    });
+
+    const json = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const msg = json?.error?.message || json?.error || json?.message || 'DID resolution failed';
+      throw new SDKError(msg, 'DID_RESOLVE_FAILED', json);
+    }
+
+    const did = json?.data?.did || json?.did;
+    if (!did || typeof did !== 'string') {
+      throw new SDKError('DID resolution missing DID', 'DID_RESOLVE_MISSING', json);
+    }
+
+    return { did, data: json?.data || null, raw: json };
+  } catch (error) {
+    if (error instanceof SDKError) throw error;
+    throw new SDKError(`DID resolution failed: ${error?.message || error}`, 'DID_RESOLVE_FAILED');
+  }
+}
+
+export async function standardizeVerificationRequest(params, options = {}) {
+  const endpointPath = options.endpoint || '/api/v1/verification/standardize';
+  const apiUrl = typeof options.apiUrl === 'string' ? options.apiUrl.trim() : '';
+
+  const resolveEndpoint = (path) => {
+    if (!path || typeof path !== 'string') return null;
+    const trimmedPath = path.trim();
+    if (!trimmedPath) return null;
+    if (/^https?:\/\//i.test(trimmedPath)) return trimmedPath;
+    if (trimmedPath.startsWith('/')) {
+      if (!apiUrl) return trimmedPath;
+      try {
+        return new URL(trimmedPath, apiUrl.endsWith('/') ? apiUrl : `${apiUrl}/`).toString();
+      } catch {
+        return null;
+      }
+    }
+    const base = apiUrl || PROOFABLE_CONSTANTS.API_BASE_URL;
+    if (!base || typeof base !== 'string') return null;
+    try {
+      return new URL(trimmedPath, base.endsWith('/') ? base : `${base}/`).toString();
+    } catch {
+      return null;
+    }
+  };
+
+  const endpoint = resolveEndpoint(endpointPath);
+  if (!endpoint) {
+    throw new SDKError('standardizeVerificationRequest requires a valid endpoint', 'INVALID_ENDPOINT');
+  }
+
+  const isRelative = endpoint.startsWith('/') || !/^https?:\/\//i.test(endpoint);
+  const credentialsMode = options.credentials !== undefined
+    ? options.credentials
+    : (isRelative ? 'same-origin' : 'omit');
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(options.headers || {})
+      },
+      body: JSON.stringify(params || {}),
+      credentials: credentialsMode
+    });
+
+    const json = await response.json().catch(() => null);
+    if (!response.ok) {
+      const msg = json?.error?.message || json?.error || json?.message || 'Standardize request failed';
+      throw new SDKError(msg, 'STANDARDIZE_FAILED', json);
+    }
+
+    return json?.data || json;
+  } catch (error) {
+    if (error instanceof SDKError) throw error;
+    throw new SDKError(`Standardize request failed: ${error?.message || error}`, 'STANDARDIZE_FAILED');
+  }
+}
+
+export function resolveZkPassportConfig(overrides = {}) {
+  const defaults = {
+    provider: 'zkpassport',
+    scope: 'basic_kyc',
+    checkSanctions: true,
+    requireFaceMatch: true,
+    faceMatchMode: 'strict'
+  };
+
+  return {
+    ...defaults,
+    ...(overrides && typeof overrides === 'object' ? overrides : {})
+  };
+}
+
+export function toHexUtf8(value) {
+  const input = typeof value === 'string' ? value : String(value || '');
+  const bytes = new TextEncoder().encode(input);
+  return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+export async function signMessage({ provider, message, walletAddress, chain } = {}) {
+  const msg = typeof message === 'string' ? message : String(message || '');
+  if (!msg) {
+    throw new SDKError('signMessage: message is required', 'INVALID_ARGUMENT');
+  }
+
+  const resolvedProvider = provider || (
+    typeof window !== 'undefined' && window?.ethereum ? window.ethereum : null
+  );
+  if (!resolvedProvider) {
+    throw new SDKError('signMessage: provider is required', 'SIGNER_UNAVAILABLE');
+  }
+
+  const chainStr = typeof chain === 'string' && chain.trim().length > 0 ? chain.trim() : 'eip155';
+  const namespace = chainStr.includes(':') ? chainStr.split(':')[0] || 'eip155' : 'eip155';
+
+  const resolveAddress = async () => {
+    if (typeof walletAddress === 'string' && walletAddress.trim().length > 0) return walletAddress;
+    if (namespace === 'solana') {
+      if (resolvedProvider?.publicKey && typeof resolvedProvider.publicKey.toBase58 === 'function') {
+        const pk = resolvedProvider.publicKey.toBase58();
+        if (typeof pk === 'string' && pk) return pk;
+      }
+      if (typeof resolvedProvider.getAddress === 'function') {
+        const addr = await resolvedProvider.getAddress().catch(() => null);
+        if (typeof addr === 'string' && addr) return addr;
+      }
+      if (typeof resolvedProvider.address === 'string' && resolvedProvider.address) return resolvedProvider.address;
+      return null;
+    }
+    if (typeof resolvedProvider.address === 'string' && resolvedProvider.address) return resolvedProvider.address;
+    if (typeof resolvedProvider.getAddress === 'function') return resolvedProvider.getAddress();
+    if (typeof resolvedProvider.request === 'function') {
+      let accounts = await resolvedProvider.request({ method: 'eth_accounts' }).catch(() => []);
+      if (!Array.isArray(accounts) || accounts.length === 0) {
+        accounts = await resolvedProvider.request({ method: 'eth_requestAccounts' }).catch(() => []);
+      }
+      if (Array.isArray(accounts) && accounts[0]) return accounts[0];
+    }
+    return null;
+  };
+
+  if (namespace !== 'eip155') {
+    if (typeof resolvedProvider.signMessage === 'function') {
+      const encoded = typeof msg === 'string' ? new TextEncoder().encode(msg) : msg;
+      const result = await resolvedProvider.signMessage(encoded);
+      if (typeof result === 'string' && result) return result;
+      if (result instanceof Uint8Array) return encodeBase58Bytes(result);
+      if (result instanceof ArrayBuffer) return encodeBase58Bytes(new Uint8Array(result));
+      if (ArrayBuffer.isView(result)) return encodeBase58Bytes(result);
+      if (typeof Buffer !== 'undefined' && typeof Buffer.isBuffer === 'function' && Buffer.isBuffer(result)) return encodeBase58Bytes(result);
+    }
+    throw new SDKError('Non-EVM signing requires provider.signMessage', 'SIGNER_UNAVAILABLE');
+  }
+
+  const address = await resolveAddress();
+
+  if (typeof resolvedProvider.request === 'function' && address) {
+    let firstPersonalSignError = null;
+    try {
+      const sig = await resolvedProvider.request({ method: 'personal_sign', params: [msg, address] });
+      if (typeof sig === 'string' && sig) return sig;
+    } catch (error) {
+      firstPersonalSignError = error;
+    }
+
+    let secondPersonalSignError = null;
+    try {
+      const sig = await resolvedProvider.request({ method: 'personal_sign', params: [address, msg] });
+      if (typeof sig === 'string' && sig) return sig;
+    } catch (error) {
+      secondPersonalSignError = error;
+      const signatureErrorMessage = String(
+        error?.message ||
+        error?.reason ||
+        firstPersonalSignError?.message ||
+        firstPersonalSignError?.reason ||
+        ''
+      ).toLowerCase();
+      const needsHex = /byte|bytes|invalid byte sequence|encoding|non-hex/i.test(signatureErrorMessage);
+      if (needsHex) {
+        try {
+          const hexMsg = toHexUtf8(msg);
+          const sig = await resolvedProvider.request({ method: 'personal_sign', params: [hexMsg, address] });
+          if (typeof sig === 'string' && sig) return sig;
+        } catch {
+          void 0;
+        }
+      }
+    }
+
+    try {
+      const sig = await resolvedProvider.request({ method: 'eth_sign', params: [address, msg] });
+      if (typeof sig === 'string' && sig) return sig;
+    } catch { /* try next method */ }
+
+    if (secondPersonalSignError || firstPersonalSignError) {
+      const lastError = secondPersonalSignError || firstPersonalSignError;
+      const isUserRejection = [4001, 'ACTION_REJECTED'].includes(lastError?.code);
+      if (isUserRejection) {
+        throw lastError;
+      }
+    }
+  }
+
+  if (typeof resolvedProvider.signMessage === 'function') {
+    const result = await resolvedProvider.signMessage(msg);
+    if (typeof result === 'string' && result) return result;
+  }
+
+  throw new SDKError('Unable to sign message with provided wallet/provider', 'SIGNER_UNAVAILABLE');
+}
+
+export function isTerminalStatus(status) {
+  if (!status || typeof status !== 'string') return false;
+
+  const successStates = [
+    'verified',
+    'verified_no_verifiers',
+    'verified_crosschain_propagated',
+    'partially_verified',
+    'verified_propagation_failed'
+  ];
+
+  const failureStates = [
+    'rejected',
+    'rejected_verifier_failure',
+    'rejected_zk_initiation_failure',
+    'error_processing_exception',
+    'error_initialization',
+    'error_storage_unavailable',
+    'error_storage_query',
+    'not_found'
+  ];
+
+  return successStates.includes(status) || failureStates.includes(status);
+}
+
+export function isSuccessStatus(status) {
+  if (!status || typeof status !== 'string') return false;
+
+  const successStates = [
+    'verified',
+    'verified_no_verifiers',
+    'verified_crosschain_propagated',
+    'partially_verified',
+    'verified_propagation_failed'
+  ];
+
+  return successStates.includes(status);
+}
+
+export function isFailureStatus(status) {
+  if (!status || typeof status !== 'string') return false;
+
+  const failureStates = [
+    'rejected',
+    'rejected_verifier_failure',
+    'rejected_zk_initiation_failure',
+    'error_processing_exception',
+    'error_initialization',
+    'error_storage_unavailable',
+    'error_storage_query',
+    'not_found'
+  ];
+
+  return failureStates.includes(status);
+}
+
+export function formatVerificationStatus(status) {
+  const statusMap = {
+    'processing_verifiers': {
+      label: 'Processing',
+      description: 'Verifiers are being executed',
+      category: 'processing',
+      color: 'blue'
+    },
+    'processing_zk_proofs': {
+      label: 'Generating ZK Proofs',
+      description: 'Zero-knowledge proofs are being generated',
+      category: 'processing',
+      color: 'blue'
+    },
+    'verified': {
+      label: 'Verified',
+      description: 'Verification completed successfully',
+      category: 'success',
+      color: 'green'
+    },
+    'verified_crosschain_initiated': {
+      label: 'Cross-chain Initiated',
+      description: 'Verification successful, cross-chain propagation started',
+      category: 'processing',
+      color: 'blue'
+    },
+    'verified_crosschain_propagating': {
+      label: 'Cross-chain Propagating',
+      description: 'Verification successful, transactions propagating to spoke chains',
+      category: 'processing',
+      color: 'blue'
+    },
+    'verified_crosschain_propagated': {
+      label: 'Fully Propagated',
+      description: 'Verification completed and propagated to all target chains',
+      category: 'success',
+      color: 'green'
+    },
+    'verified_no_verifiers': {
+      label: 'Verified (No Verifiers)',
+      description: 'Verification completed without specific verifiers',
+      category: 'success',
+      color: 'green'
+    },
+    'verified_propagation_failed': {
+      label: 'Propagation Failed',
+      description: 'Verification successful but cross-chain propagation failed',
+      category: 'warning',
+      color: 'orange'
+    },
+    'partially_verified': {
+      label: 'Partially Verified',
+      description: 'Some verifiers succeeded, others failed',
+      category: 'warning',
+      color: 'orange'
+    },
+    'rejected': {
+      label: 'Rejected',
+      description: 'Verification failed',
+      category: 'error',
+      color: 'red'
+    },
+    'rejected_verifier_failure': {
+      label: 'Verifier Failed',
+      description: 'One or more verifiers failed',
+      category: 'error',
+      color: 'red'
+    },
+    'rejected_zk_initiation_failure': {
+      label: 'ZK Initiation Failed',
+      description: 'Zero-knowledge proof generation failed to start',
+      category: 'error',
+      color: 'red'
+    },
+    'error_processing_exception': {
+      label: 'Processing Error',
+      description: 'An error occurred during verification processing',
+      category: 'error',
+      color: 'red'
+    },
+    'error_initialization': {
+      label: 'Initialization Error',
+      description: 'Failed to initialize verification',
+      category: 'error',
+      color: 'red'
+    },
+    'not_found': {
+      label: 'Not Found',
+      description: 'Verification record not found',
+      category: 'error',
+      color: 'red'
+    }
+  };
+
+  return statusMap[status] || {
+    label: status?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Unknown',
+    description: 'Unknown status',
+    category: 'unknown',
+    color: 'gray'
+  };
+}
+
+export async function computeContentHash(input) {
+  try {
+    const ethers = await import('ethers');
+    const toBytes = typeof input === 'string' ? ethers.toUtf8Bytes(input) : input;
+    return ethers.keccak256(toBytes);
+  } catch {
+    throw new SDKError('computeContentHash requires peer dependency "ethers" >= 6.0.0', 'MISSING_PEER_DEP');
+  }
+}
+
+export function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export class StatusPoller {
+  constructor(client, qHash, options = {}) {
+    this.client = client;
+    this.qHash = qHash;
+    this.options = {
+      interval: 2000, // 2 seconds
+      maxAttempts: 150, // 5 minutes total
+      exponentialBackoff: true,
+      maxInterval: 10000, // 10 seconds max
+      ...options
+    };
+    this.attempt = 0;
+    this.currentInterval = this.options.interval;
+  }
+
+  async poll() {
+    return new Promise((resolve, reject) => {
+      const pollAttempt = async () => {
+        try {
+          this.attempt++;
+
+          const response = await this.client.getProof(this.qHash);
+
+          if (isTerminalStatus(response.status)) {
+            resolve(response);
+            return;
+          }
+
+          if (this.attempt >= this.options.maxAttempts) {
+            reject(new SDKError(
+              'Verification polling timeout',
+              'POLLING_TIMEOUT'
+            ));
+            return;
+          }
+
+          if (this.options.exponentialBackoff) {
+            this.currentInterval = Math.min(
+              this.currentInterval * 1.5,
+              this.options.maxInterval
+            );
+          }
+
+          setTimeout(pollAttempt, this.currentInterval);
+
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            reject(error);
+            return;
+          }
+
+          if ((error instanceof ApiError && error.statusCode === 429) || error?.isRetryable === true) {
+            if (this.options.exponentialBackoff) {
+              const next = Math.min(this.currentInterval * 2, this.options.maxInterval);
+              const jitter = next * (0.5 + Math.random() * 0.5);
+              this.currentInterval = Math.max(250, Math.floor(jitter));
+            }
+
+            if (this.attempt >= this.options.maxAttempts) {
+              reject(new SDKError('Verification polling timeout', 'POLLING_TIMEOUT'));
+              return;
+            }
+
+            setTimeout(pollAttempt, this.currentInterval);
+            return;
+          }
+
+          reject(new SDKError(`Polling failed: ${error.message}`, 'POLLING_ERROR'));
+        }
+      };
+
+      pollAttempt();
+    });
+  }
+}
+
+export const PROOFABLE_CONSTANTS = {
+  HUB_CHAIN_ID: 84532,
+
+  TESTNET_CHAINS: [
+    11155111, // Ethereum Sepolia
+    11155420, // Optimism Sepolia
+    421614,   // Arbitrum Sepolia
+    80002     // Polygon Amoy
+  ],
+
+  API_BASE_URL: 'https://api.proofable.me',
+  API_VERSION: 'v1',
+
+  SIGNATURE_MAX_AGE_MS: 5 * 60 * 1000, // 5 minutes
+  REQUEST_TIMEOUT_MS: 30 * 1000,       // 30 seconds
+
+  DEFAULT_VERIFIERS: [
+    'ownership-basic',
+    'nft-ownership',
+    'token-holding'
+  ]
+};
+
+export function validateQHash(qHash) {
+  return typeof qHash === 'string' && /^0x[a-fA-F0-9]{64}$/.test(qHash);
+}
+
+export function formatTimestamp(timestamp) {
+  return new Date(timestamp).toLocaleString();
+}
+
+export function isSupportedChain(chainId) {
+  return PROOFABLE_CONSTANTS.TESTNET_CHAINS.includes(chainId) || chainId === PROOFABLE_CONSTANTS.HUB_CHAIN_ID;
+}
+
+export function normalizeAddress(address) {
+  if (!validateWalletAddress(address)) {
+    throw new SDKError('Invalid wallet address format', 'INVALID_ADDRESS');
+  }
+  return address.toLowerCase();
+}
+
+export function validateVerifierPayload(verifierId, data) {
+  const result = { valid: true, missing: [], warnings: [] };
+
+  if (!verifierId || typeof verifierId !== 'string') {
+    return { valid: false, error: 'verifierId is required and must be a string' };
+  }
+
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return { valid: false, error: 'data must be a non-null object' };
+  }
+
+  const id = verifierId.replace(/@\d+$/, '');
+  if (id === 'nft-ownership') {
+    ['contractAddress', 'tokenId', 'chainId'].forEach((key) => {
+      if (!(key in data)) result.missing.push(key);
+    });
+    if (!('ownerAddress' in data)) {
+      result.warnings.push('ownerAddress omitted (defaults to the signed walletAddress)');
+    }
+  } else if (id === 'token-holding') {
+    ['contractAddress', 'minBalance', 'chainId'].forEach((key) => {
+      if (!(key in data)) result.missing.push(key);
+    });
+    if (!('ownerAddress' in data)) {
+      result.warnings.push('ownerAddress omitted (defaults to the signed walletAddress)');
+    }
+  } else if (id === 'ownership-basic') {
+    if (!('owner' in data)) result.missing.push('owner');
+    const hasContent = typeof data.content === 'string' && data.content.length > 0;
+    const hasContentHash = typeof data.contentHash === 'string' && data.contentHash.length > 0;
+    const hasRefId = typeof data.reference?.id === 'string' && data.reference.id.length > 0;
+    if (!hasContent && !hasContentHash && !hasRefId) {
+      result.missing.push('content (or contentHash or reference.id)');
+    }
+  }
+
+  if (result.missing.length > 0) {
+    result.valid = false;
+    result.error = `Missing required fields: ${result.missing.join(', ')}`;
+  }
+
+  return result;
+}
+
+export function buildVerificationRequest({
+  verifierIds,
+  data,
+  walletAddress,
+  chainId = PROOFABLE_CONSTANTS.HUB_CHAIN_ID,
+  options = undefined,
+  signedTimestamp = Date.now()
+}) {
+  if (!Array.isArray(verifierIds) || verifierIds.length === 0) {
+    throw new SDKError('verifierIds must be a non-empty array', 'INVALID_ARGUMENT');
+  }
+  if (!validateWalletAddress(walletAddress)) {
+    throw new SDKError('walletAddress must be a valid 0x address', 'INVALID_ARGUMENT');
+  }
+  if (!data || typeof data !== 'object') {
+    throw new SDKError('data must be a non-null object', 'INVALID_ARGUMENT');
+  }
+  if (typeof chainId !== 'number') {
+    throw new SDKError('chainId must be a number', 'INVALID_ARGUMENT');
+  }
+
+  const message = constructVerificationMessage({
+    walletAddress,
+    signedTimestamp,
+    data,
+    verifierIds,
+    chainId
+  });
+
+  const request = {
+    verifierIds,
+    data,
+    walletAddress,
+    signedTimestamp,
+    chainId,
+    ...(options ? { options } : {})
+  };
+
+  return { message, request };
+}
+
+export async function withRetry(fn, options = {}) {
+  const {
+    maxAttempts = 3,
+    baseDelay = 1000,
+    maxDelay = 10000,
+    backoffFactor = 2
+  } = options;
+
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === maxAttempts) break;
+
+      const delayMs = Math.min(
+        baseDelay * Math.pow(backoffFactor, attempt - 1),
+        maxDelay
+      );
+
+      await delay(delayMs);
+    }
+  }
+
+  throw lastError;
+}
+
+export function validateSignatureComponents({ walletAddress, signature, signedTimestamp, data, verifierIds, chainId }) {
+  const result = {
+    valid: true,
+    errors: [],
+    warnings: [],
+    debugInfo: {}
+  };
+
+  if (!validateWalletAddress(walletAddress)) {
+    result.valid = false;
+    result.errors.push('Invalid wallet address format - must be 0x + 40 hex characters');
+  } else {
+    result.debugInfo.normalizedAddress = walletAddress.toLowerCase();
+    if (walletAddress !== walletAddress.toLowerCase()) {
+      result.warnings.push('Wallet address should be lowercase for consistency');
+    }
+  }
+
+  if (!signature || typeof signature !== 'string') {
+    result.valid = false;
+    result.errors.push('Signature is required and must be a string');
+  } else if (!/^0x[a-fA-F0-9]{130}$/.test(signature)) {
+    result.valid = false;
+    result.errors.push('Invalid signature format - must be 0x + 130 hex characters (65 bytes)');
+  }
+
+  if (!validateTimestamp(signedTimestamp)) {
+    result.valid = false;
+    result.errors.push('Invalid or expired timestamp - must be within 5 minutes');
+  } else {
+    result.debugInfo.timestampAge = Date.now() - signedTimestamp;
+  }
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    result.valid = false;
+    result.errors.push('Data must be a non-null object');
+  } else {
+    result.debugInfo.dataString = deterministicStringify(data);
+  }
+
+  if (!Array.isArray(verifierIds) || verifierIds.length === 0) {
+    result.valid = false;
+    result.errors.push('VerifierIds must be a non-empty array');
+  }
+
+  if (typeof chainId !== 'number') {
+    result.valid = false;
+    result.errors.push('ChainId must be a number');
+  }
+
+  if (result.valid || result.errors.length < 3) {
+    try {
+      result.debugInfo.messageToSign = constructVerificationMessage({
+        walletAddress: walletAddress?.toLowerCase() || walletAddress,
+        signedTimestamp,
+        data,
+        verifierIds,
+        chainId
+      });
+    } catch (error) {
+      result.errors.push(`Failed to construct message: ${error.message}`);
+    }
+  }
+
+  return result;
+}
+
+export function toAgentDelegationMaxSpend(humanAmount, decimals) {
+  if (humanAmount === undefined || humanAmount === null) {
+    throw new ValidationError('humanAmount is required', 'humanAmount', humanAmount);
+  }
+  const s0 = String(humanAmount).trim();
+  if (!s0) {
+    throw new ValidationError('humanAmount must be non-empty', 'humanAmount', humanAmount);
+  }
+  if (s0.startsWith('-') || s0.startsWith('+')) {
+    throw new ValidationError('humanAmount must be non-negative', 'humanAmount', humanAmount);
+  }
+  const d = Number(decimals);
+  if (!Number.isInteger(d) || d < 0 || d > 78) {
+    throw new ValidationError('decimalPlaces must be an integer from 0 to 78', 'decimals', decimals);
+  }
+  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(s0)) {
+    throw new ValidationError(
+      'humanAmount must be a decimal string (e.g. "100" or "100.50")',
+      'humanAmount',
+      humanAmount
+    );
+  }
+  const dot = s0.indexOf('.');
+  const intPart = dot === -1 ? s0 : s0.slice(0, dot);
+  const fracRaw = dot === -1 ? '' : s0.slice(dot + 1);
+  const intNormalized =
+    intPart === ''
+      ? '0'
+      : (() => {
+        const s = intPart.replace(/^0+/, '');
+        return s === '' ? '0' : s;
+      })();
+  if (!/^\d+$/.test(intNormalized)) {
+    throw new ValidationError('humanAmount has an invalid integer part', 'humanAmount', humanAmount);
+  }
+  if (fracRaw && !/^\d*$/.test(fracRaw)) {
+    throw new ValidationError('humanAmount has an invalid fractional part', 'humanAmount', humanAmount);
+  }
+  const fracPadded = `${fracRaw}${'0'.repeat(d)}`.slice(0, d);
+  const base = BigInt(10) ** BigInt(d);
+  const value = BigInt(intNormalized) * base + BigInt(fracPadded || '0');
+  const out = value.toString();
+  if (out.length > 78) {
+    throw new ValidationError('maxSpend exceeds 78-digit limit after conversion', 'humanAmount', humanAmount);
+  }
+  return out;
+}
+
+export const DEFAULT_HOSTED_VERIFY_URL = 'https://proofable.me/verify';
+
+export function getHostedCheckoutUrl(opts = {}) {
+  const base = typeof opts.baseUrl === 'string' && opts.baseUrl.trim()
+    ? opts.baseUrl.replace(/\/+$/, '')
+    : DEFAULT_HOSTED_VERIFY_URL;
+  const params = new URLSearchParams();
+  const gateId = typeof opts.gateId === 'string' ? opts.gateId.trim() : '';
+  const intent = typeof opts.intent === 'string' ? opts.intent.trim() : '';
+  const isLogin = intent === 'login';
+  if (gateId && !isLogin) params.set('gateId', gateId);
+  if (opts.returnUrl) params.set('returnUrl', String(opts.returnUrl));
+  if (!isLogin && !gateId && Array.isArray(opts.verifiers) && opts.verifiers.length > 0) {
+    params.set('verifiers', opts.verifiers.filter(Boolean).join(','));
+  }
+  if (!isLogin && !gateId && opts.preset) params.set('preset', String(opts.preset));
+  if (opts.mode) params.set('mode', String(opts.mode));
+  if (intent) params.set('intent', intent);
+  if (opts.origin) params.set('origin', String(opts.origin));
+  if (opts.oauthProvider) params.set('oauthProvider', String(opts.oauthProvider));
+  if (!isLogin && !gateId && opts.appId) params.set('appId', String(opts.appId));
+  if (!isLogin && !gateId && opts.billingWallet) {
+    params.set('billingWallet', String(opts.billingWallet).trim().toLowerCase());
+  }
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
+/**
+ * Build the hosted Trusted Agent setup URL without mixing login or gate-checkout semantics.
+ *
+ * Dedicated-wallet flow:
+ * 1. The agent wallet signs agent-identity.
+ * 2. Pass identityQHash here so Hosted Verify requests only agent-delegation from the controller.
+ */
+export function getHostedAgentCreateUrl(opts = {}) {
+  const agentId = typeof opts.agentId === 'string' ? opts.agentId.trim() : '';
+  const agentWallet = typeof opts.agentWallet === 'string' ? opts.agentWallet.trim() : '';
+  const controllerWallet =
+    typeof opts.controllerWallet === 'string' ? opts.controllerWallet.trim() : '';
+  const identityQHash =
+    typeof opts.identityQHash === 'string' ? opts.identityQHash.trim() : '';
+  const sharedControllerWallet = Boolean(
+    controllerWallet && controllerWallet.toLowerCase() === agentWallet.toLowerCase()
+  );
+
+  if (!agentId || agentId.length > 128) {
+    throw new ValidationError(
+      'agentId is required and must be 1-128 characters',
+      'agentId',
+      opts.agentId
+    );
+  }
+  if (!agentWallet) {
+    throw new ValidationError('agentWallet is required', 'agentWallet', opts.agentWallet);
+  }
+  if (identityQHash && !validateQHash(identityQHash)) {
+    throw new ValidationError(
+      'identityQHash must be a valid qHash',
+      'identityQHash',
+      opts.identityQHash
+    );
+  }
+  if (
+    controllerWallet &&
+    controllerWallet.toLowerCase() !== agentWallet.toLowerCase() &&
+    !identityQHash
+  ) {
+    throw new ValidationError(
+      'Dedicated agent wallets must sign agent-identity first. Pass its identityQHash to request the controller delegation step.',
+      'identityQHash',
+      opts.identityQHash
+    );
+  }
+
+  let returnUrl = '';
+  if (typeof opts.returnUrl === 'string' && opts.returnUrl.trim()) {
+    try {
+      const parsed = new URL(opts.returnUrl.trim());
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('unsupported protocol');
+      }
+      returnUrl = parsed.toString();
+    } catch {
+      throw new ValidationError(
+        'returnUrl must be an absolute http(s) URL',
+        'returnUrl',
+        opts.returnUrl
+      );
+    }
+  }
+
+  const url = new URL(
+    getHostedCheckoutUrl({
+      baseUrl: opts.baseUrl,
+      returnUrl: returnUrl || undefined,
+      verifiers: identityQHash
+        ? ['agent-delegation']
+        : (sharedControllerWallet ? ['agent-identity'] : ['agent-identity', 'agent-delegation'])
+    })
+  );
+  url.searchParams.set('agentId', agentId);
+  url.searchParams.set('agentWallet', agentWallet);
+  if (controllerWallet) url.searchParams.set('controllerWallet', controllerWallet);
+  if (typeof opts.agentLabel === 'string' && opts.agentLabel.trim()) {
+    url.searchParams.set('agentLabel', opts.agentLabel.trim().slice(0, 128));
+  }
+  if (typeof opts.agentType === 'string' && opts.agentType.trim()) {
+    url.searchParams.set('agentType', opts.agentType.trim().slice(0, 32));
+  }
+  if (typeof opts.scope === 'string' && opts.scope.trim()) {
+    url.searchParams.set('scope', opts.scope.trim().slice(0, 128));
+  }
+  if (opts.expiresAt !== undefined && opts.expiresAt !== null) {
+    const expiresAt = Number(opts.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= 0) {
+      throw new ValidationError(
+        'expiresAt must be a positive Unix timestamp in milliseconds',
+        'expiresAt',
+        opts.expiresAt
+      );
+    }
+    url.searchParams.set('expiresAt', String(Math.floor(expiresAt)));
+  }
+  if (opts.maxSpend !== undefined && opts.maxSpend !== null && String(opts.maxSpend).trim()) {
+    const maxSpend = String(opts.maxSpend).trim();
+    if (!/^[0-9]{1,78}$/.test(maxSpend)) {
+      throw new ValidationError(
+        'maxSpend must be a whole-number string in token base units',
+        'maxSpend',
+        opts.maxSpend
+      );
+    }
+    url.searchParams.set('maxSpend', maxSpend);
+  }
+
+  const permissions = Array.isArray(opts.permissions)
+    ? opts.permissions.map(String).map(value => value.trim()).filter(Boolean).slice(0, 32)
+    : [];
+  if (permissions.length > 0) {
+    url.searchParams.set('prefillDelegationDefaults', JSON.stringify({ permissions }));
+  }
+  if (Array.isArray(opts.allowedActions) && opts.allowedActions.length > 0) {
+    url.searchParams.set(
+      'prefillAllowedActions',
+      JSON.stringify(opts.allowedActions.map(String).slice(0, 32))
+    );
+  }
+  if (Array.isArray(opts.deniedActions) && opts.deniedActions.length > 0) {
+    url.searchParams.set(
+      'prefillDeniedActions',
+      JSON.stringify(opts.deniedActions.map(String).slice(0, 32))
+    );
+  }
+  if (opts.runtimePolicy && typeof opts.runtimePolicy === 'object' && !Array.isArray(opts.runtimePolicy)) {
+    url.searchParams.set('prefillRuntimePolicy', JSON.stringify(opts.runtimePolicy));
+  }
+  if (opts.approvalPolicy && typeof opts.approvalPolicy === 'object' && !Array.isArray(opts.approvalPolicy)) {
+    url.searchParams.set('prefillApprovalPolicy', JSON.stringify(opts.approvalPolicy));
+  }
+
+  return url.toString();
+}

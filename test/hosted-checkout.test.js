@@ -1,0 +1,55 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildHostedCheckoutUrl,
+  buildHostedCheckoutRedirectUrl
+} from '../widgets/verify-gate/hostedCheckout.js';
+
+describe('hosted checkout handoff URLs', () => {
+  it('keeps popup mode for popup launches but removes it for same-window redirects', () => {
+    const popupUrl = buildHostedCheckoutUrl({
+      hostedCheckoutUrl: 'https://proofable.me/verify',
+      verifierList: ['proof-of-human'],
+      returnUrl: 'https://app.example/demo?claim=fair-airdrop',
+      origin: 'https://app.example'
+    });
+
+    const popup = new URL(popupUrl);
+    expect(popup.searchParams.get('mode')).toBe('popup');
+    expect(popup.searchParams.get('returnUrl')).toBe('https://app.example/demo?claim=fair-airdrop');
+    expect(popup.searchParams.get('origin')).toBe('https://app.example');
+
+    const withBilling = buildHostedCheckoutUrl({
+      hostedCheckoutUrl: 'https://proofable.me/verify',
+      verifierList: ['ownership-basic'],
+      returnUrl: 'https://app.example/callback',
+      origin: 'https://app.example',
+      appId: 'my-app',
+      billingWallet: '0xAbCdEf0123456789012345678901234567890AbCd'
+    });
+    const billingUrl = new URL(withBilling);
+    expect(billingUrl.searchParams.get('appId')).toBe('my-app');
+    expect(billingUrl.searchParams.get('billingWallet')).toBe(
+      '0xabcdef0123456789012345678901234567890abcd'
+    );
+
+    const gateUrl = buildHostedCheckoutUrl({
+      hostedCheckoutUrl: 'https://proofable.me/verify',
+      verifierList: ['ownership-basic'],
+      returnUrl: 'https://app.example/callback',
+      origin: 'https://app.example',
+      appId: 'my-app',
+      billingWallet: '0xAbCdEf0123456789012345678901234567890AbCd',
+      gateId: 'gate_abc123'
+    });
+    const gateCheckoutUrl = new URL(gateUrl);
+    expect(gateCheckoutUrl.searchParams.get('gateId')).toBe('gate_abc123');
+    expect(gateCheckoutUrl.searchParams.get('verifiers')).toBeNull();
+    expect(gateCheckoutUrl.searchParams.get('appId')).toBeNull();
+    expect(gateCheckoutUrl.searchParams.get('billingWallet')).toBeNull();
+
+    const redirect = new URL(buildHostedCheckoutRedirectUrl(popupUrl));
+    expect(redirect.searchParams.get('mode')).toBeNull();
+    expect(redirect.searchParams.get('returnUrl')).toBe('https://app.example/demo?claim=fair-airdrop');
+    expect(redirect.searchParams.get('origin')).toBe('https://app.example');
+  });
+});

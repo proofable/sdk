@@ -1,0 +1,123 @@
+#!/usr/bin/env node
+/**
+ * Proofable , basic Node.js example
+ * Direct verification with standard message signing
+ */
+
+import { ethers } from 'ethers';
+import { ProofableClient } from '@proofable/sdk/client';
+
+const API_BASE = 'https://api.proofable.me';
+const WALLET_PRIVATE_KEY = process.env.TEST_WALLET_PRIVATE_KEY;
+
+if (!WALLET_PRIVATE_KEY) {
+  console.error('Set TEST_WALLET_PRIVATE_KEY environment variable');
+  process.exit(1);
+}
+
+async function main() {
+  console.log('Proofable , basic example\n');
+
+  const wallet = new ethers.Wallet(WALLET_PRIVATE_KEY);
+  const walletAddress = wallet.address;
+  const signedTimestamp = Date.now();
+
+  console.log('Wallet:', walletAddress);
+  console.log('API:', API_BASE, '\n');
+
+  const verificationData = {
+    content: 'Hello Proofable',
+    owner: walletAddress,
+    reference: {
+      type: 'url',
+      id: 'https://example.com'
+    }
+  };
+
+  // Ask the API for the exact signing string, then sign it
+  console.log('Standardizing and signing message...');
+  const standardizeRes = await fetch(`${API_BASE}/api/v1/verification/standardize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      walletAddress,
+      verifierIds: ['ownership-basic'],
+      data: verificationData,
+      signedTimestamp
+    })
+  });
+  if (!standardizeRes.ok) {
+    throw new Error(`Standardize failed (${standardizeRes.status})`);
+  }
+  const standardized = await standardizeRes.json();
+  const message = standardized?.data?.signerString;
+  if (typeof message !== 'string' || !message.length) {
+    throw new Error('Missing signerString in standardize response');
+  }
+
+  const signature = await wallet.signMessage(message);
+
+  // Submit verification
+  console.log('Submitting verification...');
+  const verifyResponse = await fetch(`${API_BASE}/api/v1/verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      walletAddress,
+      verifierIds: ['ownership-basic'],
+      data: verificationData,
+      signedTimestamp,
+      signature
+    })
+  });
+
+  const raw = await verifyResponse.text();
+  let result;
+  try {
+    result = raw ? JSON.parse(raw) : null;
+  } catch {
+    result = null;
+  }
+
+  if (!verifyResponse.ok) {
+    const msg =
+      (result && (result.error?.message || result.error || result.message)) ||
+      raw ||
+      verifyResponse.statusText;
+    throw new Error(`Verification failed (${verifyResponse.status}): ${msg}`);
+  }
+
+  const qHash = result.data?.qHash;
+  console.log('qHash:', qHash);
+  if (!qHash) {
+    throw new Error('Missing qHash in verification response');
+  }
+
+  // Poll status
+  console.log('Polling status...');
+  const client = new ProofableClient({ apiUrl: API_BASE });
+  const final = await client.pollProofStatus(qHash, {
+    interval: 3000,
+    timeout: 120000,
+    onProgress: (s) => {
+      const st = s?.status || s?.data?.status;
+      if (st) console.log('Status:', st);
+    }
+  });
+  console.log('Final Status:', final?.status || final?.data?.status);
+
+  console.log('\nGate check (reuse eligibility without re-running verification)...');
+  const gate = await client.gateCheck({
+    address: walletAddress,
+    verifierIds: ['ownership-basic']
+  });
+  console.log(
+    'Eligible:',
+    gate?.data?.eligible,
+    gate?.data?.matchedCount !== null && gate?.data?.matchedCount !== undefined
+      ? `(matched: ${gate.data.matchedCount})`
+      : ''
+  );
+}
+
+main().catch(console.error);

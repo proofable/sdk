@@ -1,0 +1,170 @@
+{
+  "name": "@proofable/sdk",
+  "version": "0.1.0",
+  "description": "Build portable identity, proof, access, payments, and agent permissions into products.",
+  "bin": {
+    "proofable": "cli/proofable.mjs"
+  },
+  "main": "index.js",
+  "type": "module",
+  "types": "types.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types.d.ts",
+      "import": "./index.js",
+      "require": "./cjs/index.cjs"
+    },
+    "./client": {
+      "types": "./types.d.ts",
+      "import": "./client.js",
+      "require": "./cjs/client.cjs"
+    },
+    "./utils": {
+      "import": "./utils.js",
+      "require": "./cjs/utils.cjs"
+    },
+    "./errors": {
+      "import": "./errors.js",
+      "require": "./cjs/errors.cjs"
+    },
+    "./gates": {
+      "import": "./gates.js",
+      "require": "./cjs/gates.cjs"
+    },
+    "./runtime-mount": {
+      "types": "./types.d.ts",
+      "import": "./runtime-mount.js",
+      "require": "./cjs/runtime-mount.cjs"
+    },
+    "./runtime-adapters": {
+      "types": "./types.d.ts",
+      "import": "./runtime-adapters.js",
+      "require": "./cjs/runtime-adapters.cjs"
+    },
+    "./sponsor": {
+      "types": "./types.d.ts",
+      "import": "./sponsor.js",
+      "require": "./cjs/sponsor.cjs"
+    },
+    "./brand-mark": {
+      "types": "./types.d.ts",
+      "import": "./brand-mark.js",
+      "require": "./cjs/brand-mark.cjs"
+    },
+    "./widgets": {
+      "types": "./types.d.ts",
+      "import": "./widgets/index.js",
+      "require": "./widgets.cjs"
+    },
+    "./widgets/verify-gate": {
+      "types": "./types.d.ts",
+      "import": "./widgets/verify-gate/index.js",
+      "require": "./widgets.cjs"
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "test": "npm run build:cjs && vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint . --ignore-pattern widgets/verify-gate/dist/**",
+    "format": "prettier --write \"**/*.js\"",
+    "build": "npm run build:widgets && npm run build:cjs",
+    "build:widgets": "npx esbuild widgets/verify-gate/VerifyGate.jsx widgets/verify-gate/ProofBadge.jsx --bundle --platform=browser --format=esm --outdir=widgets/verify-gate/dist --jsx=automatic --legal-comments=none --external:react --external:react-dom --external:react/jsx-runtime --external:@proofable/sdk/client",
+    "build:cjs": "npx esbuild index.js client.js utils.js errors.js gates.js runtime-mount.js runtime-adapters.js sponsor.js brand-mark.js --bundle --platform=node --format=cjs --outdir=cjs --out-extension:.js=.cjs --legal-comments=none --external:ethers --external:@zkpassport/sdk --external:react --external:react-dom --external:react/jsx-runtime",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run lint && npm test && npm run build",
+    "proofable": "node cli/proofable.mjs"
+  },
+  "keywords": [
+    "proofable",
+    "portable-proof",
+    "caip-380",
+    "ai-agents",
+    "agent-permissions",
+    "agent-identity",
+    "mcp",
+    "model-context-protocol",
+    "identity",
+    "authorization",
+    "access-control",
+    "verification",
+    "sdk"
+  ],
+  "author": "Proofable",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/proofable/sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/proofable/sdk/issues"
+  },
+  "homepage": "https://proofable.me",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "peerDependencies": {
+    "ethers": "^6.0.0",
+    "react": ">=17.0.0",
+    "react-dom": ">=17.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "overrides": {
+    "ws": "8.21.0",
+    "vite": "8.0.16",
+    "js-yaml": "4.3.1",
+    "brace-expansion": "5.0.9",
+    "launch-editor": "2.14.1",
+    "postcss": ">=8.5.23"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.3.0",
+    "@noble/hashes": "^1.4.0",
+    "bs58": "^6.0.0",
+    "js-sha3": "^0.9.3"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.3",
+    "esbuild": "^0.28.1",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.37.2",
+    "prettier": "^3.2.0",
+    "vitest": "^4.1.3"
+  },
+  "files": [
+    "cli/proofable.mjs",
+    "skills/**",
+    "cli-commands.js",
+    "mcp-hosts.js",
+    "index.js",
+    "client.js",
+    "utils.js",
+    "errors.js",
+    "gates.js",
+    "sponsor.js",
+    "brand-mark.js",
+    "runtime-mount.js",
+    "runtime-adapters.js",
+    "cjs/**",
+    "widgets.cjs",
+    "types.d.ts",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE",
+    "widgets/index.js",
+    "widgets/verify-gate/index.js",
+    "widgets/verify-gate/dist/VerifyGate.js",
+    "widgets/verify-gate/dist/ProofBadge.js"
+  ]
+}

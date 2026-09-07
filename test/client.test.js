@@ -1,0 +1,626 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { ProofableClient } from '../client.js';
+import { ValidationError, NetworkError, ApiError, ConfigurationError } from '../errors.js';
+
+global.fetch = vi.fn();
+
+describe('ProofableClient', () => {
+  let client;
+
+  beforeEach(() => {
+    client = new ProofableClient({ enableLogging: false });
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('Constructor', () => {
+    it('should initialize with default config', () => {
+      const defaultClient = new ProofableClient();
+      expect(defaultClient.baseUrl).toBe('https://api.proofable.me');
+      expect(defaultClient.config.timeout).toBe(30000);
+    });
+
+    it('should accept custom config', () => {
+      const customClient = new ProofableClient({
+        apiUrl: 'https://api.proofable.me',
+        timeout: 5000,
+        enableLogging: true
+      });
+      expect(customClient.baseUrl).toBe('https://api.proofable.me');
+      expect(customClient.config.timeout).toBe(5000);
+      expect(customClient.config.enableLogging).toBe(true);
+    });
+
+    it('should enforce HTTPS for proofable.me domains', () => {
+      const httpClient = new ProofableClient({ apiUrl: 'http://api.proofable.me' });
+      expect(httpClient.baseUrl).toBe('https://api.proofable.me');
+    });
+
+    it('sets Origin from appOrigin on Node (no window)', () => {
+      const originClient = new ProofableClient({
+        enableLogging: false,
+        appOrigin: 'https://app.example'
+      });
+      expect(originClient.defaultHeaders.Origin).toBe('https://app.example');
+      expect(originClient.defaultHeaders['X-Client-Origin']).toBe('https://app.example');
+    });
+  });
+
+  describe('verify()', () => {
+    it('should validate required parameters', async () => {
+      await expect(client.verify({})).rejects.toThrow(ValidationError);
+    });
+
+    it('should validate verifier types', async () => {
+      await expect(client.verify({
+        verifier: 'invalid-verifier',
+        content: 'test'
+      })).rejects.toThrow(ValidationError);
+    });
+
+    it('should validate content parameter', async () => {
+      await expect(client.verify({
+        verifier: 'ownership-basic',
+        content: null
+      })).rejects.toThrow(ValidationError);
+
+      await expect(client.verify({
+        verifier: 'ownership-basic',
+        content: 123
+      })).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('getPrivateProof() / wallet resolution', () => {
+    it('throws ConfigurationError when getAddress is non-string and there is no usable account', async () => {
+      const w = {
+        getAddress: async () => 123,
+        request: async ({ method }) => (method === 'eth_accounts' ? [] : null)
+      };
+      await expect(client.getPrivateProof(`0x${'ab'.repeat(32)}`, w)).rejects.toThrow(ConfigurationError);
+    });
+
+    it('does not silently use Solana globals as the implicit browser wallet', () => {
+      const previousWindow = global.window;
+      global.window = {
+        solana: { publicKey: { toBase58: () => '11111111111111111111111111111111' } },
+        phantom: {
+          solana: { publicKey: { toBase58: () => '22222222222222222222222222222222' } }
+        }
+      };
+
+      try {
+        expect(client._getDefaultBrowserWallet()).toBeNull();
+      } finally {
+        global.window = previousWindow;
+      }
+    });
+  });
+
+  describe('getProof()', () => {
+    it('should validate qHash parameter', async () => {
+      await expect(client.getProof()).rejects.toThrow(ValidationError);
+      await expect(client.getProof('')).rejects.toThrow(ValidationError);
+      await expect(client.getProof(123)).rejects.toThrow(ValidationError);
+    });
+
+    it('should make correct API call', async () => {
+      const mockResponse = {
+        success: true,
+        status: 'verified',
+        data: { qHash: '0xtest123' }
+      };
+
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse)
+      });
+
+      const result = await client.getProof('0xtest123');
+
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.proofable.me/api/v1/proofs/0xtest123',
+        expect.objectContaining({
+          method: 'GET'
+        })
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.qHash).toBe('0xtest123');
+    });
+
+    it('should normalize qHash when API returns qHash', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          status: 'verified',
+          data: { status: 'verified', qHash: '0xonlyqhash' }
+        })
+      });
+
+      const result = await client.getProof('0xonlyqhash');
+      expect(result.qHash).toBe('0xonlyqhash');
+    });
+
+    it('should handle API errors', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({
+          success: false,
+          error: { message: 'Proof not found', code: 'NOT_FOUND' }
+        })
+      });
+
+      await expect(client.getProof('0xinvalid')).rejects.toThrow(ApiError);
+    });
+  });
+
+  describe('getVerifiers()', () => {
+    it('should return array of verifiers', async () => {
+      const mockResponse = {
+        success: true,
+        data: ['ownership-basic', 'nft-ownership', 'token-holding']
+      };
+
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse)
+      });
+
+      const verifiers = await client.getVerifiers();
+
+      expect(Array.isArray(verifiers)).toBe(true);
+      expect(verifiers).toContain('ownership-basic');
+      expect(verifiers).toContain('nft-ownership');
+      expect(verifiers).toContain('token-holding');
+    });
+
+    it('should handle empty response gracefully', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: null })
+      });
+
+      const verifiers = await client.getVerifiers();
+      expect(Array.isArray(verifiers)).toBe(true);
+      expect(verifiers).toEqual([]);
+    });
+
+    it('should return catalog metadata when requested', async () => {
+      const mockResponse = {
+        success: true,
+        data: ['ownership-social'],
+        metadata: {
+          'ownership-social': {
+            flowType: 'interactive',
+            supportsDirectApi: false
+          }
+        },
+        meta: { hubChainId: 8453 }
+      };
+
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse)
+      });
+
+      const catalog = await client.getVerifierCatalog();
+      expect(catalog.data).toEqual(['ownership-social']);
+      expect(catalog.metadata['ownership-social']?.supportsDirectApi).toBe(false);
+      expect(catalog.meta?.hubChainId).toBe(8453);
+    });
+  });
+
+  describe('verify() catalog capabilities', () => {
+    it('rejects hosted-only verifiers based on public catalog capability', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          data: ['ownership-social'],
+          metadata: {
+            'ownership-social': {
+              supportsDirectApi: false
+            }
+          }
+        })
+      });
+
+      await expect(client.verify({
+        verifier: 'ownership-social',
+        data: { provider: 'github' }
+      })).rejects.toThrow('requires hosted interactive checkout');
+    });
+  });
+
+  describe('createWalletLinkData()', () => {
+    it('builds a signed wallet-link payload for direct advanced flows', async () => {
+      const wallet = {
+        selectedAddress: '0x2222222222222222222222222222222222222222',
+        request: vi.fn(async ({ method, params }) => {
+          if (method === 'personal_sign') {
+            expect(typeof params?.[0]).toBe('string');
+            expect(params?.[1]).toBe('0x2222222222222222222222222222222222222222');
+            return '0xsigned';
+          }
+          throw new Error(`Unexpected method: ${method}`);
+        })
+      };
+
+      const data = await client.createWalletLinkData({
+        primaryWalletAddress: '0x1111111111111111111111111111111111111111',
+        secondaryWalletAddress: '0x2222222222222222222222222222222222222222',
+        wallet,
+        relationshipType: 'ORG',
+        label: ' Team wallet '
+      });
+
+      expect(data).toMatchObject({
+        primaryWalletAddress: '0x1111111111111111111111111111111111111111',
+        secondaryWalletAddress: '0x2222222222222222222222222222222222222222',
+        chain: `eip155:${client._getHubChainId()}`,
+        signature: '0xsigned',
+        signatureMethod: 'eip191',
+        relationshipType: 'org',
+        label: 'Team wallet'
+      });
+      expect(typeof data.signedTimestamp).toBe('number');
+      expect(wallet.request).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('isHealthy()', () => {
+    it('should return true for healthy API', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ success: true })
+      });
+
+      const healthy = await client.isHealthy();
+      expect(healthy).toBe(true);
+    });
+
+    it('should return false for unhealthy API', async () => {
+      fetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const healthy = await client.isHealthy();
+      expect(healthy).toBe(false);
+    });
+
+    it('should return false for error responses', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500
+      });
+
+      const healthy = await client.isHealthy();
+      expect(healthy).toBe(false);
+    });
+  });
+
+  describe('pollProofStatus()', () => {
+    it('should validate qHash parameter', async () => {
+      await expect(client.pollProofStatus()).rejects.toThrow(ValidationError);
+      await expect(client.pollProofStatus('')).rejects.toThrow(ValidationError);
+    });
+
+    it('should poll until terminal status', async () => {
+      const responses = [
+        { success: true, status: 'pending', data: { status: 'pending' } },
+        { success: true, status: 'verifying', data: { status: 'processing_verifiers' } },
+        { success: true, status: 'verified', data: { status: 'verified', qHash: '0xtest123' } }
+      ];
+
+      let callCount = 0;
+      fetch.mockImplementation(() => {
+        const response = responses[callCount++];
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(response)
+        });
+      });
+
+      const result = await client.pollProofStatus('0xtest123', {
+        interval: 100,
+        timeout: 5000
+      });
+
+      expect(result.status).toBe('verified');
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('verify() default options', () => {
+    it('sends private stored defaults when options omitted', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: { status: 'verified', qHash: `0x${'ab'.repeat(32)}` }
+          })
+      });
+
+      const wallet = '0x1234567890123456789012345678901234567890';
+      await client.verify({
+        verifierIds: ['ownership-basic'],
+        data: {
+          owner: wallet,
+          content: 'hello'
+        },
+        walletAddress: wallet,
+        signature: `0x${'11'.repeat(65)}`,
+        signedTimestamp: Date.now()
+      });
+
+      expect(fetch).toHaveBeenCalled();
+      const [, init] = fetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.options.privacyLevel).toBe('private');
+      expect(body.options.publicDisplay).toBe(false);
+      expect(body.options.storeOriginalContent).toBe(true);
+    });
+
+    it('honors explicit storeOriginalContent false', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: { status: 'verified', qHash: `0x${'cd'.repeat(32)}` }
+          })
+      });
+
+      const wallet = '0x2234567890123456789012345678901234567890';
+      await client.verify({
+        verifierIds: ['ownership-basic'],
+        data: {
+          owner: wallet,
+          content: 'hello'
+        },
+        walletAddress: wallet,
+        signature: `0x${'22'.repeat(65)}`,
+        signedTimestamp: Date.now(),
+        options: { storeOriginalContent: false }
+      });
+
+      const [, init] = fetch.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.options.storeOriginalContent).toBe(false);
+    });
+  });
+
+  describe('Network Error Handling', () => {
+    it('should handle network timeouts', async () => {
+      fetch.mockRejectedValueOnce(new Error('Network timeout'));
+
+      await expect(client.getProof('0xtest')).rejects.toThrow(NetworkError);
+    });
+
+    it('should handle connection refused', async () => {
+      const error = new Error('Connection refused');
+      error.code = 'ECONNREFUSED';
+      fetch.mockRejectedValueOnce(error);
+
+      await expect(client.isHealthy()).resolves.toBe(false);
+    });
+  });
+
+  const EVM_A = '0x1234567890123456789012345678901234567890';
+  const EVM_B = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+
+  describe('gateCheck()', () => {
+    it('should require a valid address', async () => {
+      await expect(
+        client.gateCheck({ address: '!!!' })
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('should call proofs/check with query params', async () => {
+      const addr = EVM_A;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: { eligible: true, matches: [] }
+          })
+      });
+
+      const out = await client.gateCheck({
+        address: addr,
+        verifierIds: ['ownership-basic', 'nft-ownership'],
+        requireAll: true
+      });
+
+      expect(out.success).toBe(true);
+      const calledUrl = fetch.mock.calls[0][0];
+      expect(calledUrl).toContain('/api/v1/proofs/check?');
+      expect(calledUrl).toContain(encodeURIComponent(addr));
+      expect(calledUrl).toContain('verifierIds=');
+    });
+
+    it('passes gateId directly to proofs/check without sponsor headers', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: { eligible: true, matches: [] }
+          })
+      });
+
+      await client.gateCheck({
+        gateId: 'gate_abc123',
+        address: EVM_A
+      });
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+      const checkInit = fetch.mock.calls[0][1];
+      expect(checkInit.headers['X-Sponsor-Grant']).toBeUndefined();
+      expect(fetch.mock.calls[0][0]).toContain('/api/v1/proofs/check?');
+      expect(fetch.mock.calls[0][0]).toContain('gateId=gate_abc123');
+      expect(fetch.mock.calls[0][0]).not.toContain('verifierIds=');
+    });
+
+    it('attaches sponsor grant header when billingWallet is configured', async () => {
+      const billingClient = new ProofableClient({
+        enableLogging: false,
+        appId: 'my-app',
+        billingWallet: EVM_A,
+        appOrigin: 'https://app.example'
+      });
+
+      fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: {
+                sponsorGrant: 'grant-token',
+                exp: Math.floor(Date.now() / 1000) + 900
+              }
+            })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: { eligible: true, matches: [] }
+            })
+        });
+
+      await billingClient.gateCheck({
+        address: EVM_B,
+        verifierIds: ['ownership-basic']
+      });
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const grantInit = fetch.mock.calls[0][1];
+      expect(grantInit.headers['X-Neus-App']).toBe('my-app');
+      const checkInit = fetch.mock.calls[1][1];
+      expect(checkInit.headers['X-Sponsor-Grant']).toBe('grant-token');
+    });
+  });
+
+  describe('checkGate()', () => {
+    it('satisfies requirements when preloaded proofs match', async () => {
+      const walletAddress = EVM_B;
+      const result = await client.checkGate({
+        walletAddress,
+        requirements: [{ verifierId: 'ownership-basic' }],
+        proofs: [
+          {
+            createdAt: Date.now(),
+            verifiedVerifiers: [
+              { verifierId: 'ownership-basic', verified: true, data: {} }
+            ]
+          }
+        ]
+      });
+      expect(result.satisfied).toBe(true);
+      expect(result.missing).toEqual([]);
+    });
+
+    it('should validate requirements', async () => {
+      await expect(
+        client.checkGate({ walletAddress: EVM_A, requirements: [] })
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('getGate()', () => {
+    it('calls profile gate snapshot on api.proofable.me', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: { gate: { gateId: 'gate_demo', requirements: [] } }
+          })
+      });
+
+      const gate = await client.getGate('gate_demo');
+      expect(gate.gateId).toBe('gate_demo');
+      const calledUrl = fetch.mock.calls[0][0];
+      expect(calledUrl).toBe(
+        'https://api.proofable.me/api/v1/profile/gates/gate_demo'
+      );
+      expect(calledUrl).not.toContain('/api/v1/gates/');
+    });
+  });
+
+  describe('fulfillGate()', () => {
+    const qHash = `0x${'ab'.repeat(32)}`;
+
+    it('posts to profile gate fulfill on api.proofable.me', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: { gateId: 'gate_demo', qHash, fulfillment: { type: 'url' } }
+          })
+      });
+
+      const out = await client.fulfillGate({
+        gateId: 'gate_demo',
+        qHash,
+        walletAddress: EVM_A,
+        accessGrant: {
+          connectedAccountId: 'ca_1',
+          toolkitSlug: 'github',
+          resources: [{ kind: 'repository', id: 'proofable/proofable' }]
+        }
+      });
+
+      expect(out.success).toBe(true);
+      const [calledUrl, init] = fetch.mock.calls[0];
+      expect(calledUrl).toBe(
+        'https://api.proofable.me/api/v1/profile/gates/gate_demo/fulfill'
+      );
+      expect(calledUrl).not.toContain('/api/v1/gates/');
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body)).toMatchObject({
+        qHash,
+        walletAddress: EVM_A,
+        accessGrant: {
+          connectedAccountId: 'ca_1',
+          toolkitSlug: 'github',
+          resources: [{ kind: 'repository', id: 'proofable/proofable' }]
+        }
+      });
+    });
+  });
+
+  describe('revokeOwnProof()', () => {
+    const qHash = `0x${'cd'.repeat(32)}`;
+
+    it('uses the parsed _makeRequest response (no second JSON parse)', async () => {
+      const wallet = {
+        address: EVM_A,
+        request: async ({ method }) => {
+          if (method === 'personal_sign') return `0x${'ab'.repeat(65)}`;
+          return null;
+        }
+      };
+      const makeRequest = vi
+        .spyOn(client, '_makeRequest')
+        .mockResolvedValue({ success: true });
+
+      await expect(client.revokeOwnProof(qHash, wallet)).resolves.toBe(true);
+      expect(makeRequest).toHaveBeenCalledWith(
+        'POST',
+        `/api/v1/proofs/revoke-self/${qHash}`,
+        expect.objectContaining({ walletAddress: EVM_A })
+      );
+    });
+  });
+});

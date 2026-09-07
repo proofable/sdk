@@ -1,0 +1,921 @@
+'use client';
+import { useCallback, useMemo, useState, useEffect } from 'react';
+import { ProofableClient } from '@proofable/sdk/client';
+import {
+  HOSTED_CHECKOUT_MESSAGE_TYPE,
+  buildHostedCheckoutRedirectUrl,
+  buildHostedCheckoutUrl
+} from './hostedCheckout.js';
+import { PROOFABLE_DEFAULT_MARK_URL } from '../../brand-mark.js';
+
+const THEME = {
+  primary: 'var(--proofable-primary, #98C0EF)',
+  primaryHover: 'var(--proofable-primary-hover, rgb(61, 114, 201))',
+  onAccent: '#0a0a0a',
+  success: 'var(--proofable-trust, var(--proofable-primary, #98C0EF))',
+  error: 'var(--proofable-error, #ef4444)',
+  warning: 'var(--proofable-warning, #f59e0b)',
+  bgDark: 'var(--proofable-bg-dark, rgba(2, 6, 23, 0.95))',
+  bgCard: 'var(--proofable-bg-card, rgba(15, 23, 42, 0.8))',
+  textPrimary: 'var(--proofable-text-primary, rgba(255, 255, 255, 0.93))',
+  textSecondary: 'var(--proofable-text-secondary, #94a3b8)',
+  textMuted: 'var(--proofable-text-muted, #64748b)',
+  border: 'var(--proofable-border, rgba(148, 163, 184, 0.2))',
+  borderHover: 'var(--proofable-border-hover, rgba(61, 114, 201, 0.4))'
+};
+
+if (typeof document !== 'undefined') {
+  const sid = 'proofable-vg-primary-cta';
+  if (!document.getElementById(sid)) {
+    const el = document.createElement('style');
+    el.id = sid;
+    el.textContent =
+      '@keyframes proofable-vg-spin{to{transform:rotate(360deg)}}' +
+      'button.proofable-vg__primary{ color: #0a0a0a !important; -webkit-text-fill-color: #0a0a0a; }' +
+      'button.proofable-vg__primary .proofable-vg__label,button.proofable-vg__primary span.proofable-vg__label{ color: inherit !important; -webkit-text-fill-color: inherit; }';
+    document.head.appendChild(el);
+  }
+}
+
+const DEFAULT_HOSTED_CHECKOUT_URL = 'https://proofable.me/verify';
+const VERIFY_GATE_DEFAULT_ERROR = 'Something went wrong. Please try again.';
+const VERIFY_GATE_CHECK_FAILED_ERROR = 'We could not check your existing proofs. Try again.';
+
+/**
+ * Map a gate-check error to user-safe copy. Returns null when the error is
+ * not actionable in the widget context (caller uses its own default).
+ *
+ * Distinguishes "no proof yet" (not an error , handled by the satisfied flag)
+ * from "check failed" (network, 402, sponsor grant expired, etc.) so the
+ * auto-check path never silently swallows infrastructure failures.
+ *
+ * @param {unknown} err
+ * @returns {string | null} User-safe copy, or null to use caller default.
+ */
+function getVerifyGateUserError(err) {
+  const c = err && err.code;
+  const msg = String((err && err.message) || '');
+  if (c === 'INVALID_WALLET_ADDRESS' || c === 'CONFIGURATION_ERROR') {
+    return 'Connect a wallet and try again.';
+  }
+  if (msg === 'walletAddress is required and must be a string') {
+    return 'Connect a wallet and try again.';
+  }
+  if (/^User rejected\b/i.test(msg) || /rejected the signature|User rejected the wallet-link/i.test(msg)) {
+    return 'The request was cancelled.';
+  }
+  if (c === 'VALIDATION_ERROR' && /wallet|connect|No wallet|No Web3|accounts available|walletAddress/i.test(msg)) {
+    return 'Connect a wallet and try again.';
+  }
+  return null;
+}
+
+/**
+ * True for errors that mean the eligibility check itself broke (network,
+ * auth, billing), not "no matching proof", which is a normal `satisfied:false`
+ * result. Used to decide whether the auto-check path should surface an error
+ * vs. stay silent and let the user proceed to verify.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+function isCheckInfrastructureError(err) {
+  if (!err) return false;
+  const code = String((err && err.code) || '').toUpperCase();
+  if (code === 'INSUFFICIENT_CREDITS' || code === 'NETWORK_ERROR' || code === 'API_ERROR') return true;
+  const status = Number(err && err.statusCode);
+  if (Number.isFinite(status) && (status >= 500 || status === 401 || status === 402 || status === 429)) return true;
+  const name = String((err && err.name) || '');
+  if (name === 'NetworkError' || name === 'ApiError' || name === 'AuthenticationError') return true;
+  return false;
+}
+
+/**
+ * User-safe copy for a failed eligibility check. Mirrors the parity helper
+ * in the hosted app but kept
+ * self-contained for the public SDK , no internal imports.
+ *
+ * @param {unknown} err
+ * @returns {string}
+ */
+function getCheckFailedUserMessage(err) {
+  const code = String((err && err.code) || '').toUpperCase();
+  if (code === 'INSUFFICIENT_CREDITS') {
+    const status = Number(err && err.statusCode);
+    if (status === 402) {
+      return 'This gate is temporarily unavailable. The publisher needs to add credits.';
+    }
+    return 'Insufficient credits. Add credits to continue.';
+  }
+  const name = String((err && err.name) || '');
+  if (name === 'NetworkError' || code === 'NETWORK_ERROR') {
+    return 'Network issue. Check your connection and try again.';
+  }
+  return VERIFY_GATE_CHECK_FAILED_ERROR;
+}
+
+function dispatchProofCreatedForHost({ qHash, walletAddress }) {
+  try {
+    if (typeof window === 'undefined') return;
+    const raw = typeof qHash === 'string' ? qHash.trim() : '';
+    if (!raw) return;
+    const w = typeof walletAddress === 'string' ? walletAddress.trim() : '';
+    const normalizedWallet =
+      w && /^0x[a-fA-F0-9]{40}$/.test(w) ? w.toLowerCase() : w;
+    window.dispatchEvent(
+      new CustomEvent('proofableAccessUpdated', {
+        detail: {
+          proofCreated: true,
+          qHash: raw,
+          ...(normalizedWallet ? { walletAddress: normalizedWallet } : {})
+        }
+      })
+    );
+  } catch (_err) {
+    // intentional: host dispatch is best-effort
+  }
+}
+
+function VerifyGateInlineSpinner({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      style={{ animation: 'proofable-vg-spin 0.8s linear infinite' }}
+    >
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+      <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProofableLogo({ size = 16 }) {
+  return (
+    <img
+      src={PROOFABLE_DEFAULT_MARK_URL}
+      alt=""
+      aria-hidden="true"
+      width={size}
+      height={size}
+      style={{
+        width: size,
+        height: size,
+        display: 'block',
+        borderRadius: 4,
+        flexShrink: 0,
+        objectFit: 'contain',
+        background: 'transparent'
+      }}
+    />
+  );
+}
+
+export function VerifyGate({
+  gateId = undefined,
+  requiredVerifiers = ['ownership-basic'],
+  onVerified = undefined,
+  apiUrl = undefined,
+  appId = undefined,
+  billingWallet = undefined,
+  paymentSignature = undefined,
+  extraHeaders = undefined,
+  hostedCheckoutUrl = undefined,
+  oauthProvider = undefined,
+  style = undefined,
+  children = undefined,
+  showBrand = false,
+  disabled = false,
+  buttonText = undefined,
+  mode = 'create',
+  qHash: qHashProp = null,
+  strategy = 'reuse-or-create',
+  checkExisting = true,
+  allowPrivateReuse = true,
+  campaignTitle = undefined,
+  campaignMessage = undefined,
+  onStateChange = undefined,
+  onError = undefined,
+  wallet = undefined,
+  chain = undefined,
+  signatureMethod = undefined
+}) {
+  const [state, setState] = useState('idle');
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [walletAddress, setWalletAddress] = useState(null);
+  const [existingProofs, setExistingProofs] = useState(null);
+  const [operation, setOperation] = useState('verify');
+
+  const resolvedGateId = typeof gateId === 'string' ? gateId.trim() : '';
+
+  const client = useMemo(
+    () => new ProofableClient({ apiUrl, appId: resolvedGateId ? undefined : appId, billingWallet: resolvedGateId ? undefined : billingWallet, paymentSignature, extraHeaders }),
+    [apiUrl, appId, billingWallet, paymentSignature, extraHeaders, resolvedGateId]
+  );
+
+  const verifierList = useMemo(() => {
+    if (resolvedGateId) return [];
+    return Array.isArray(requiredVerifiers) && requiredVerifiers.length > 0
+      ? requiredVerifiers
+      : ['ownership-basic'];
+  }, [requiredVerifiers, resolvedGateId]);
+
+  const primaryVerifier = verifierList[0];
+  const qHash = qHashProp || null;
+  const resolvedQHash = qHash;
+  const resolvedHostedCheckoutUrl = useMemo(() => {
+    if (typeof hostedCheckoutUrl === 'string' && hostedCheckoutUrl.trim()) {
+      return hostedCheckoutUrl.trim();
+    }
+    if (typeof apiUrl === 'string' && apiUrl.trim()) {
+      try {
+        return new URL('/verify', apiUrl.trim()).toString();
+      } catch (_err) {
+        return DEFAULT_HOSTED_CHECKOUT_URL;
+      }
+    }
+    return DEFAULT_HOSTED_CHECKOUT_URL;
+  }, [apiUrl, hostedCheckoutUrl]);
+
+  const shouldCheckExisting = !resolvedGateId && checkExisting && strategy !== 'fresh';
+
+  const inferChainFromAddress = useCallback((address) => {
+    const raw = String(address || '').trim();
+    if (!raw) return undefined;
+    if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return undefined;
+    if (typeof chain === 'string' && chain.includes(':')) return chain.trim();
+    return 'solana:mainnet';
+  }, [chain]);
+
+  const buildGateRequirements = useCallback(() => {
+    return verifierList.map(verifierId => ({ verifierId }));
+  }, [verifierList]);
+
+  const applySatisfiedGateResult = useCallback((gateResult, address) => {
+    if (!gateResult?.satisfied) return false;
+
+    setNotice(null);
+    setError(null);
+    setState('verified');
+    setExistingProofs(gateResult);
+
+    const existingProof = gateResult.existing?.[primaryVerifier];
+    if (existingProof && onVerified) {
+      const existingQHash = existingProof.qHash || null;
+      onVerified({
+        qHash: existingQHash,
+        address: existingProof.walletAddress || address,
+        verifierIds: verifierList,
+        verifiedVerifiers: existingProof.verifiedVerifiers || [],
+        existing: true,
+        proofsByVerifierId: gateResult.existing || {},
+        proofUrl: existingQHash
+          ? `${apiUrl || 'https://api.proofable.me'}/api/v1/proofs/${existingQHash}`
+          : null
+      });
+    }
+
+    return true;
+  }, [apiUrl, onVerified, primaryVerifier, verifierList]);
+
+  const getOrRequestWalletAddress = useCallback(async () => {
+    const provider =
+      wallet ||
+      (typeof window !== 'undefined' ? window.ethereum : null);
+    if (!provider) {
+      throw new Error('No wallet provider available');
+    }
+
+    if (provider.publicKey && typeof provider.publicKey.toBase58 === 'function') {
+      const pk = provider.publicKey.toBase58();
+      if (pk) return pk;
+    }
+    if (typeof provider.getAddress === 'function') {
+      const addr = await provider.getAddress().catch(() => null);
+      if (addr) return addr;
+    }
+    if (typeof provider.address === 'string' && provider.address) {
+      return provider.address;
+    }
+    if (typeof provider.request !== 'function') {
+      throw new Error('Connect a wallet and try again.');
+    }
+
+    let accounts = await provider.request({ method: 'eth_accounts' });
+    if (!accounts || accounts.length === 0) {
+      await provider.request({ method: 'eth_requestAccounts' });
+      accounts = await provider.request({ method: 'eth_accounts' });
+    }
+    if (!accounts || accounts.length === 0) {
+      throw new Error('Connect a wallet and try again.');
+    }
+    return accounts[0];
+  }, [wallet]);
+
+  const tryPrivateReuse = useCallback(async (address) => {
+    setOperation('reuse');
+    setState('signing');
+
+    const provider = wallet || (typeof window !== 'undefined' ? window.ethereum : null);
+    const requirements = buildGateRequirements();
+    const resolvedChain = inferChainFromAddress(address);
+    const resolvedSignatureMethod =
+      (typeof signatureMethod === 'string' && signatureMethod.trim())
+        ? signatureMethod.trim()
+        : ((resolvedChain && !resolvedChain.startsWith('eip155:')) ? 'ed25519' : undefined);
+    const privateAuth = provider
+      ? await client.createGatePrivateAuth({
+        address,
+        wallet: provider,
+        ...(resolvedChain ? { chain: resolvedChain } : {}),
+        ...(resolvedSignatureMethod ? { signatureMethod: resolvedSignatureMethod } : {})
+      })
+      : null;
+
+    const gateResults = await Promise.all(
+      requirements.map(async (requirement) => {
+        const verifierId = requirement?.verifierId;
+        if (!verifierId) {
+          return { verifierId: null, eligible: false, qHash: null };
+        }
+
+        const maxAgeMs = requirement?.maxAgeMs;
+        const gateParams = {
+          address,
+          verifierIds: [verifierId],
+          includePrivate: true,
+          includeQHashes: true,
+          ...(privateAuth ? { privateAuth } : { wallet: provider }),
+          ...(resolvedChain ? { chain: resolvedChain } : {}),
+          ...(resolvedSignatureMethod ? { signatureMethod: resolvedSignatureMethod } : {})
+        };
+        if (typeof maxAgeMs === 'number' && maxAgeMs > 0) {
+          gateParams.since = Date.now() - maxAgeMs;
+        }
+
+        const apiResult = await client.gateCheck(gateParams);
+        const data = apiResult?.data || {};
+        const matchedQHashes = Array.isArray(data.matchedQHashes)
+          ? data.matchedQHashes
+          : [];
+
+        return {
+          verifierId,
+          eligible: data.eligible === true,
+          qHash: matchedQHashes[0] || null
+        };
+      })
+    );
+
+    const existing = {};
+    const missing = [];
+    for (const result of gateResults) {
+      if (!result.verifierId) continue;
+      if (!result.eligible) {
+        missing.push({ verifierId: result.verifierId });
+        continue;
+      }
+      if (result.qHash) {
+        existing[result.verifierId] = {
+          qHash: result.qHash,
+          walletAddress: address,
+          verifiedVerifiers: [{ verifierId: result.verifierId, verified: true }]
+        };
+      }
+    }
+
+    const adaptedGateResult = {
+      satisfied: missing.length === 0,
+      missing,
+      existing,
+      allProofs: []
+    };
+
+    setExistingProofs(adaptedGateResult);
+    return adaptedGateResult;
+  }, [client, buildGateRequirements, wallet, inferChainFromAddress, signatureMethod]);
+
+  const launchHostedCheckout = useCallback(async () => {
+    if (typeof window === 'undefined') {
+      throw new Error('Open this in a browser to verify.');
+    }
+
+    const origin = window.location.origin;
+    const returnUrl = window.location.href;
+    const checkoutUrl = buildHostedCheckoutUrl({
+      hostedCheckoutUrl: resolvedHostedCheckoutUrl,
+      verifierList,
+      returnUrl,
+      origin,
+      oauthProvider,
+      campaignTitle,
+      campaignMessage,
+      gateId: resolvedGateId || undefined,
+      appId: resolvedGateId ? undefined : appId,
+      billingWallet: resolvedGateId ? undefined : billingWallet
+    });
+
+    let expectedOrigin = null;
+    try {
+      expectedOrigin = new URL(resolvedHostedCheckoutUrl).origin;
+    } catch (_err) {
+      expectedOrigin = null;
+    }
+
+    return new Promise((resolve, reject) => {
+      const url = checkoutUrl;
+      const popup = window.open(
+        url,
+        'neus_checkout',
+        'width=600,height=700,scrollbars=yes,resizable=yes'
+      );
+
+      if (!popup) {
+        // Popup blocked → top-level redirect. The page navigates away, so the
+        // hosted checkout completes out-of-band. Resolve with a redirect
+        // sentinel instead of leaving the Promise pending forever (which would
+        // pin isProcessing=true and freeze the widget state).
+        window.location.assign(buildHostedCheckoutRedirectUrl(url));
+        resolve({ redirected: true });
+        return;
+      }
+
+      let completed = false;
+      const timeoutId = window.setTimeout(() => {
+        cleanup();
+        reject(new Error('Hosted checkout timed out. Please try again.'));
+      }, 10 * 60 * 1000);
+
+      const pollId = window.setInterval(() => {
+        if (!popup.closed) return;
+        if (!completed) {
+          cleanup();
+          reject(new Error('Hosted checkout was closed before completion.'));
+        }
+      }, 500);
+
+      const cleanup = () => {
+        window.removeEventListener('message', onMessage);
+        window.clearTimeout(timeoutId);
+        window.clearInterval(pollId);
+        try {
+          if (!popup.closed) popup.close();
+        } catch (_err) {
+          // intentional: popup close is best-effort
+        }
+      };
+
+      const onMessage = (event) => {
+        if (!expectedOrigin || event.origin !== expectedOrigin) return;
+        const payload = event?.data;
+        if (!payload || payload.type !== HOSTED_CHECKOUT_MESSAGE_TYPE) return;
+
+        completed = true;
+        cleanup();
+
+        if (payload?.eligible === false) {
+          reject(new Error('Verification could not be completed.'));
+          return;
+        }
+
+        resolve(payload);
+      };
+
+      window.addEventListener('message', onMessage);
+    });
+  }, [resolvedHostedCheckoutUrl, verifierList, oauthProvider, campaignTitle, campaignMessage, appId, billingWallet, resolvedGateId]);
+
+  useEffect(() => {
+    onStateChange?.(state);
+  }, [state, onStateChange]);
+
+  useEffect(() => {
+    if (!shouldCheckExisting || mode === 'access') return;
+
+    const checkExistingProofs = async () => {
+      try {
+        const provider =
+          wallet ||
+          (typeof window !== 'undefined' ? window.ethereum : null);
+        if (!provider || typeof provider.request !== 'function') return;
+
+        const accounts = await provider.request({ method: 'eth_accounts' });
+        if (!accounts || accounts.length === 0) return;
+
+        const address = accounts[0];
+        setWalletAddress(address);
+
+        const gateResult = await client.checkGate({
+          walletAddress: address,
+          requirements: buildGateRequirements()
+        });
+
+        setExistingProofs(gateResult);
+        applySatisfiedGateResult(gateResult, address);
+      } catch (err) {
+        // "No matching proof" is a normal `satisfied:false` result, not an
+        // error. Only surface infrastructure failures (network, 402, auth,
+        // rate limit) so an integrator's user isn't left staring at a stalled
+        // idle state with no signal when their sponsor grant expired or the
+        // network blipped.
+        if (isCheckInfrastructureError(err)) {
+          const userMsg = getCheckFailedUserMessage(err);
+          setError(userMsg);
+          setState('error');
+          onError?.(err);
+        }
+      }
+    };
+
+    checkExistingProofs();
+
+    const provider =
+      wallet ||
+      (typeof window !== 'undefined' ? window.ethereum : null);
+    if (provider && typeof provider.on === 'function' && typeof provider.removeListener === 'function') {
+      const handleAccountsChanged = (nextAccounts) => {
+        const next = Array.isArray(nextAccounts) && nextAccounts[0]
+          ? String(nextAccounts[0])
+          : '';
+        const current = walletAddress ? String(walletAddress) : '';
+        // Only reset when the account actually changed. Some providers fire
+        // `accountsChanged` with the same address on chain/network events;
+        // resetting there would drop a verified state the user still holds.
+        if (next && current && next.toLowerCase() === current.toLowerCase()) {
+          return;
+        }
+        setWalletAddress(next || null);
+        setExistingProofs(null);
+        if (state === 'verified') setState('idle');
+        checkExistingProofs();
+      };
+
+      provider.on('accountsChanged', handleAccountsChanged);
+      return () => provider.removeListener('accountsChanged', handleAccountsChanged);
+    }
+  }, [shouldCheckExisting, mode, client, buildGateRequirements, applySatisfiedGateResult, state, wallet, walletAddress, onError]);
+
+  const handleClick = useCallback(async () => {
+    if (disabled || isProcessing) return;
+
+    if (state === 'verified' && existingProofs?.satisfied) {
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+
+    if (shouldCheckExisting && walletAddress) {
+      try {
+        const gateResult = await client.checkGate({
+          walletAddress,
+          requirements: buildGateRequirements()
+        });
+
+        if (applySatisfiedGateResult(gateResult, walletAddress)) return;
+      } catch (err) {
+        // Only block on infrastructure failures; a missing proof is the normal
+        // "needs verify" path and falls through to the main flow.
+        if (isCheckInfrastructureError(err)) {
+          const userMsg = getVerifyGateUserError(err) ?? getCheckFailedUserMessage(err);
+          setError(userMsg);
+          setState('error');
+          onError?.(err);
+          return;
+        }
+      }
+    }
+
+    try {
+      if (mode === 'access') {
+        setOperation('access');
+        setIsProcessing(true);
+        setState('signing');
+
+        if (!resolvedQHash) {
+          throw new Error('qHash is required for access mode');
+        }
+
+        setState('verifying');
+
+        const privateData = await client.getPrivateProof(
+          resolvedQHash,
+          wallet || (typeof window !== 'undefined' ? window.ethereum : null)
+        );
+
+        setState('verified');
+
+        onVerified?.({
+          qHash: resolvedQHash,
+          data: privateData.data,
+          mode: 'access',
+          proofUrl: privateData.proofUrl
+        });
+
+      } else if (strategy === 'reuse') {
+        setOperation('reuse');
+
+        if (!allowPrivateReuse) {
+          setNotice('No existing proof was found.');
+          return;
+        }
+
+        setIsProcessing(true);
+        const address = walletAddress || await getOrRequestWalletAddress();
+        setWalletAddress(address);
+
+        const gateResult = await tryPrivateReuse(address);
+        if (applySatisfiedGateResult(gateResult, address)) return;
+
+        setState('idle');
+        setNotice('No matching proof was found. Create a proof to continue.');
+      } else {
+        setOperation('verify');
+        setIsProcessing(true);
+        setState('interactive-checkout');
+        onStateChange?.('interactive-checkout');
+
+        const checkoutResult = await launchHostedCheckout();
+        // Popup blocked → top-level redirect already underway. Do not treat as
+        // a verification result; the page is navigating to hosted checkout and
+        // will return via returnUrl. Keep isProcessing true so the button does
+        // not flicker to idle mid-navigation.
+        if (checkoutResult?.redirected === true) {
+          return;
+        }
+        const checkoutQHash = checkoutResult?.qHash || null;
+        const handoffWallet =
+          (typeof checkoutResult?.walletAddress === 'string' && checkoutResult.walletAddress.trim()) ||
+          (walletAddress && String(walletAddress).trim()) ||
+          '';
+        setState('verified');
+        dispatchProofCreatedForHost({
+          qHash: checkoutQHash,
+          walletAddress: handoffWallet
+        });
+        onVerified?.({
+          qHash: checkoutQHash,
+          verifierIds: verifierList,
+          existing: false,
+          mode: 'create',
+          eligible: checkoutResult?.eligible !== false,
+          proofUrl: checkoutResult?.proofUrl || (
+            checkoutQHash
+              ? `${apiUrl || 'https://api.proofable.me'}/api/v1/proofs/${checkoutQHash}`
+              : null
+          )
+        });
+      }
+
+    } catch (err) {
+      const userMsg = getVerifyGateUserError(err);
+      const fallback = mode === 'access' ? 'Access failed' : VERIFY_GATE_DEFAULT_ERROR;
+      setError(userMsg !== null ? userMsg : fallback);
+      setState('error');
+      onError?.(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [
+    disabled,
+    isProcessing,
+    mode,
+    resolvedQHash,
+    verifierList,
+    client,
+    apiUrl,
+    launchHostedCheckout,
+    onVerified,
+    onError,
+    onStateChange,
+    shouldCheckExisting,
+    walletAddress,
+    existingProofs,
+    strategy,
+    allowPrivateReuse,
+    buildGateRequirements,
+    applySatisfiedGateResult,
+    getOrRequestWalletAddress,
+    tryPrivateReuse,
+    state,
+    wallet
+  ]);
+
+  const handleReuseExisting = useCallback(async () => {
+    if (disabled || isProcessing) return;
+    if (mode === 'access') return;
+    if (!allowPrivateReuse) return;
+
+    setError(null);
+    setNotice(null);
+
+    try {
+      setIsProcessing(true);
+      const address = walletAddress || await getOrRequestWalletAddress();
+      setWalletAddress(address);
+
+      const gateResult = await tryPrivateReuse(address);
+      if (applySatisfiedGateResult(gateResult, address)) return;
+
+      setState('idle');
+      setNotice('No matching proof was found. Verify to create a proof.');
+    } catch (err) {
+      const userMsg = getVerifyGateUserError(err);
+      setError(userMsg !== null ? userMsg : 'Unable to access private proofs');
+      setState('error');
+      onError?.(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [
+    disabled, isProcessing, mode, allowPrivateReuse,
+    walletAddress, getOrRequestWalletAddress, tryPrivateReuse,
+    applySatisfiedGateResult, onError
+  ]);
+
+  const primaryCtaClass =
+    state === 'idle' || state === 'interactive-checkout' ? 'proofable-vg__primary' : '';
+
+  const getLabel = () => {
+    if (buttonText && state === 'idle') return buttonText;
+
+    if (mode === 'access') {
+      return {
+        idle: 'Sign to view',
+        signing: 'Waiting for signature...',
+        verifying: 'Accessing...',
+        verified: 'Access granted',
+        error: 'Retry'
+      }[state];
+    }
+
+    if (strategy === 'reuse') {
+      return {
+        idle: 'Check proofs',
+        signing: 'Waiting for signature...',
+        verifying: 'Checking...',
+        verified: 'Verified',
+        error: 'Retry'
+      }[state];
+    }
+
+    return {
+      idle: 'Verify with Proofable',
+      signing: 'Waiting for signature...',
+      verifying: operation === 'reuse' ? 'Checking...' : 'Verifying...',
+      verified: 'Verified',
+      error: 'Retry'
+    }[state];
+  };
+
+  const buttonBaseStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '12px 24px',
+    borderRadius: '8px',
+    border: 'none',
+    fontWeight: 500,
+    fontSize: '14px',
+    cursor: disabled || isProcessing ? 'not-allowed' : 'pointer',
+    transition: 'all 0.2s ease',
+    opacity: disabled || isProcessing ? 0.6 : 1,
+    fontFamily: 'inherit'
+  };
+
+  const getButtonStyle = () => {
+    if (state === 'verified') {
+      return {
+        ...buttonBaseStyle,
+        background: 'var(--proofable-verified-bg, rgba(152, 192, 239, 0.12))',
+        color: THEME.success,
+        border: '1px solid var(--proofable-verified-border, rgba(61, 114, 201, 0.28))'
+      };
+    }
+    if (state === 'error') {
+      return {
+        ...buttonBaseStyle,
+        background: 'rgba(239, 68, 68, 0.15)',
+        color: THEME.error,
+        border: '1px solid rgba(239, 68, 68, 0.3)'
+      };
+    }
+    if (state === 'signing' || state === 'verifying') {
+      return {
+        ...buttonBaseStyle,
+        background: 'rgba(61, 114, 201, 0.15)',
+        color: 'var(--proofable-accent, #98C0EF)',
+        border: '1px solid rgba(61, 114, 201, 0.3)'
+      };
+    }
+    return {
+      ...buttonBaseStyle,
+      background: THEME.primary,
+      color: THEME.onAccent,
+      border: 'none',
+      boxShadow: '0 10px 26px rgba(0, 0, 0, 0.34)'
+    };
+  };
+
+  if (children) {
+    if (state === 'verified') {
+      return <>{children}</>;
+    }
+
+    return (
+      <div style={{ textAlign: 'center', padding: '20px', ...style }}>
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={disabled || isProcessing}
+          className={primaryCtaClass}
+          style={getButtonStyle()}
+        >
+          {(state === 'signing' || state === 'verifying' || state === 'interactive-checkout') && (
+            <VerifyGateInlineSpinner size={16} />
+          )}
+          {showBrand && state === 'idle' && <ProofableLogo size={16} />}
+          {state === 'verified' && (
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+          )}
+          <span className="proofable-vg__label" style={{ color: 'inherit' }}>{getLabel()}</span>
+        </button>
+        {notice && (
+          <div style={{
+            color: THEME.textSecondary,
+            marginTop: '10px',
+            fontSize: '13px',
+            padding: '8px 12px',
+            background: 'rgba(148, 163, 184, 0.08)',
+            borderRadius: '6px',
+            border: '1px solid rgba(148, 163, 184, 0.14)'
+          }}>
+            {notice}
+          </div>
+        )}
+        {mode !== 'access' && allowPrivateReuse && shouldCheckExisting && strategy !== 'reuse' && state === 'idle' && (
+          <button
+            type="button"
+            onClick={handleReuseExisting}
+            disabled={disabled || isProcessing}
+            style={{
+              marginTop: notice ? '10px' : '12px',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              color: THEME.textSecondary,
+              fontSize: '12px',
+              cursor: disabled || isProcessing ? 'not-allowed' : 'pointer',
+              textDecoration: 'underline',
+              textUnderlineOffset: '2px',
+              opacity: disabled || isProcessing ? 0.6 : 0.9
+            }}
+          >
+            Already verified? Reuse your proof.
+          </button>
+        )}
+        {error && (
+          <div style={{
+            color: THEME.error,
+            marginTop: '8px',
+            fontSize: '13px',
+            padding: '8px 12px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            borderRadius: '6px',
+            border: '1px solid rgba(239, 68, 68, 0.2)'
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={primaryCtaClass}
+      style={{ ...getButtonStyle(), ...style }}
+      disabled={disabled || isProcessing}
+    >
+      {(state === 'signing' || state === 'verifying' || state === 'interactive-checkout') && (
+        <VerifyGateInlineSpinner size={16} />
+      )}
+      {showBrand && state === 'idle' && <ProofableLogo size={16} />}
+      {state === 'verified' && (
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+        </svg>
+      )}
+      <span className="proofable-vg__label" style={{ color: 'inherit' }}>{getLabel()}</span>
+      {error && <span style={{ opacity: 0.8, marginLeft: '8px' }}>: {error}</span>}
+    </button>
+  );
+}

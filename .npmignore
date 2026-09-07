@@ -1,0 +1,39 @@
+# Dev / test (never publish)
+test/
+*.test.js
+vitest.config.js
+coverage/
+.eslintrc.json
+.prettierrc
+tsconfig.json
+package-lock.json
+
+# Widget source , dist/ is the shipped browser bundle
+widgets/**/*.jsx
+widgets/**/hostedCheckout.js
+widgets/**/mergeCreateProofOptions.js
+
+# Source control / IDE / secrets
+.git/
+.gitignore
+.npmrc
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS / logs / deps
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+node_modules/
+
+# Docs mirrors (not part of npm package)
+docs/
+backup-docs/
+
+# Temp
+tmp/
+temp/
+*.tmp
