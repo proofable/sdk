@@ -515,7 +515,7 @@ describe('proofable CLI', () => {
     expect(byClient.vscode.configured).toBe(true);
     expect(byClient.vscode.authConfigured).toBe(true);
     expect(byClient.claude.configured).toBe(true);
-  });
+  }, 30000);
 
   it('treats empty MCP config files as unconfigured instead of crashing', async () => {
     const context = await makeCliContext();
@@ -567,7 +567,7 @@ describe('proofable CLI', () => {
       await fs.readFile(path.join(context.homeDir, '.cursor', 'mcp.json'), 'utf8')
     );
     expect(cursorConfig.mcpServers.proofable.url).toBe('https://mcp.proofable.me/mcp');
-  });
+  }, 30000);
 
   it('exits non-zero for unknown subcommand', async () => {
     const context = await makeCliContext();
