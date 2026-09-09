@@ -5,31 +5,33 @@
 | Need | Where |
 | --- | --- |
 | Product documentation | [docs.proofable.me](https://docs.proofable.me) |
-| Possible bugs | [Issues](https://github.com/proofable/proofable/issues) |
-| Ideas and questions | [Discussions](https://github.com/proofable/proofable/discussions) |
+| Possible bugs | [Issues](https://github.com/proofable/sdk/issues) |
+| Ideas and questions | [Discussions](https://github.com/proofable/sdk/discussions) |
 | Security reports | [dev@proofable.me](mailto:dev@proofable.me) (do not post publicly) |
 | Release notes | [CHANGELOG.md](./CHANGELOG.md) |
+
+## What lives here
+
+`@proofable/sdk`: the JavaScript client, the `proofable` CLI, gate helpers, MCP host adapters, and the runnable examples. Verifier schemas live in [proofable/docs](https://github.com/proofable/docs). The hosted API and MCP server are not in this repository.
 
 ## What helps
 
 - Bug reports with clear steps to reproduce and no secrets in the thread.
-- Verifier proposals that spell out the user-visible outcome you want. Open a [Discussion](https://github.com/proofable/proofable/discussions) first; a PR should include the spec, schema, and docs together.
-- Updates to the SDK, examples, or documentation that match what the live product does today.
-- Tests or examples when you change behavior that builders rely on.
+- Client, CLI, or gate changes that match what the live product does today.
+- Examples that a builder can run end to end without editing them first.
+- Tests when you change behavior that builders rely on.
+
+To propose a new check, open a PR in [proofable/docs](https://github.com/proofable/docs) instead. See [Propose a verifier](https://docs.proofable.me/verification/propose-a-verifier).
 
 **Do not** share keys, tokens, bearer secrets, or private proof content in public issues or change descriptions.
-
-## Verifier proposals
-
-The public verifier catalog and input schemas live in **this repo**: JSON Schemas under [`docs/verifiers/schemas/`](./docs/verifiers/schemas) and the machine index at [`spec/VERIFIERS.json`](./spec/VERIFIERS.json). A contributor opens a PR here to add a new check; once merged, it propagates to the protocol verifier registry. See [Propose a verifier](https://docs.proofable.me/verification/propose-a-verifier) for the full flow.
 
 ## Do not commit
 
 These paths are local-only or generated elsewhere (see `.gitignore`):
 
 - `.env`, `.npmrc`, secrets, and key material
-- `sdk/cjs/` and other build artifacts
+- `cjs/` and other build output
 
 ## Describing your change
 
-Explain **what builders or end users will experience differently** (for example new fields, new errors, or renamed concepts). If you adjust verifiers or any documented HTTP surface, keep the written API reference and examples aligned with the live product.
+Explain **what builders or end users will experience differently** (for example new fields, new errors, or renamed concepts). Keep the README, examples, and the written API reference aligned with the live product.

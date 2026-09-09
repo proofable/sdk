@@ -118,7 +118,7 @@ function persistOAuthTokens(tokenJson, clientId, resource) {
 async function refreshOAuthToken() {
   const store = readTokenStore();
   if (!store?.refreshToken) {
-    throw new Error('No stored OAuth refresh token. Run `npx -y -p @proofable/sdk proofable auth --oauth` first.');
+    throw new Error('No stored OAuth refresh token. Run `npx -y @proofable/sdk auth --oauth` first.');
   }
   const params = new URLSearchParams();
   params.set('grant_type', 'refresh_token');
@@ -287,9 +287,9 @@ function printBuilderGuidance(command, results) {
   const label = (client) => IDE_HOST_LABELS[client] || client;
   writeCliLine('');
   writeCliLine(paint('Next steps', 'cyan'));
-  writeGuidanceLine('Run `npx -y -p @proofable/sdk proofable examples` for assistant prompts.');
+  writeGuidanceLine('Run `npx -y @proofable/sdk examples` for assistant prompts.');
   if (ok.some(result => result.client === 'codex')) {
-    writeGuidanceLine('Codex OAuth: `npx -y -p @proofable/sdk proofable auth --client codex` or `codex mcp login proofable`.');
+    writeGuidanceLine('Codex OAuth: `npx -y @proofable/sdk auth --client codex` or `codex mcp login proofable`.');
   }
   if (ok.length > 0) {
     writeGuidanceLine(`Proofable MCP registered for ${ok.map(result => label(result.client)).join(', ')}.`);
@@ -304,7 +304,7 @@ function selectedClientNames(results) {
 function preferredSetupCommand(results) {
   const clients = selectedClientNames(results);
   const suffix = clients.length === 1 ? ` --client ${clients[0]}` : '';
-  return `npx -y -p @proofable/sdk proofable setup${suffix}`;
+  return `npx -y @proofable/sdk setup${suffix}`;
 }
 
 function isHostConnectClient(client) {
@@ -315,11 +315,11 @@ function hostConnectHint(clients) {
   const unique = [...new Set((clients || []).filter(Boolean))];
   const hasCodex = unique.includes('codex');
   const hostClients = unique.filter(isHostConnectClient);
-  const codexHint = ' For Codex, run `npx -y -p @proofable/sdk proofable auth --client codex`.';
+  const codexHint = ' For Codex, run `npx -y @proofable/sdk auth --client codex`.';
   if (unique.length === 1 && unique[0] === 'codex') {
     return {
-      hint: 'Run `npx -y -p @proofable/sdk proofable auth --client codex` to sign in through Codex.',
-      nextCommand: 'npx -y -p @proofable/sdk proofable auth --client codex'
+      hint: 'Run `npx -y @proofable/sdk auth --client codex` to sign in through Codex.',
+      nextCommand: 'npx -y @proofable/sdk auth --client codex'
     };
   }
   if (hostClients.length) {
@@ -332,13 +332,13 @@ function hostConnectHint(clients) {
   }
   if (hasCodex) {
     return {
-      hint: 'Run `npx -y -p @proofable/sdk proofable auth --client codex` to sign in through Codex.',
-      nextCommand: 'npx -y -p @proofable/sdk proofable auth --client codex'
+      hint: 'Run `npx -y @proofable/sdk auth --client codex` to sign in through Codex.',
+      nextCommand: 'npx -y @proofable/sdk auth --client codex'
     };
   }
   return {
-    hint: 'Run `npx -y -p @proofable/sdk proofable auth --oauth` only for the CLI token store.',
-    nextCommand: 'npx -y -p @proofable/sdk proofable auth --oauth'
+    hint: 'Run `npx -y @proofable/sdk auth --oauth` only for the CLI token store.',
+    nextCommand: 'npx -y @proofable/sdk auth --oauth'
   };
 }
 
@@ -349,7 +349,7 @@ function printStatusGuidance(results) {
   writeCliLine(paint('Profile connection', 'cyan'));
   if (results.some(result => result.configured)) {
     writeGuidanceLine(
-      'Saved config found. Run `npx -y -p @proofable/sdk proofable doctor --live` to confirm the connection.'
+      'Saved config found. Run `npx -y @proofable/sdk doctor --live` to confirm the connection.'
     );
   } else {
     writeGuidanceLine(`No selected MCP host is configured yet. Run \`${preferredSetupCommand(results)}\`.`);
@@ -1770,7 +1770,7 @@ async function runMount(options) {
     throw new Error('Usage: proofable mount <agentId> [--apply cursor|claude|codex]');
   }
   if (!accessKey) {
-    throw new Error('Credential required. Run `npx -y -p @proofable/sdk proofable auth --oauth` or pass --access-key.');
+    throw new Error('Credential required. Run `npx -y @proofable/sdk auth --oauth` or pass --access-key.');
   }
 
   const controller = new AbortController();
@@ -2230,14 +2230,14 @@ function runAuth(options) {
 async function runRefresh(options = {}) {
   const store = readTokenStore();
   if (!store?.refreshToken) {
-    const message = 'No stored OAuth refresh token. Run `npx -y -p @proofable/sdk proofable auth --oauth` first.';
+    const message = 'No stored OAuth refresh token. Run `npx -y @proofable/sdk auth --oauth` first.';
     if (options.json) {
       printJson({ command: 'refresh', error: message });
     } else {
       writeCliLine('');
       writeCliLine(`  ${paint('Proofable', 'green')}  ${paint('refresh', 'red')}`);
       writeCliLine('');
-      logStep('warn', 'missing', 'no stored refresh token; run `npx -y -p @proofable/sdk proofable auth --oauth` first');
+      logStep('warn', 'missing', 'no stored refresh token; run `npx -y @proofable/sdk auth --oauth` first');
     }
     process.exitCode = 1;
     return null;
@@ -2560,7 +2560,7 @@ async function runDoctor(options) {
     writeCliLine(paint('Profile connection', 'cyan'));
     writeGuidanceLine(`No selected MCP host is configured yet. Run \`${preferredSetupCommand(inspected)}\`.`);
     writeGuidanceLine(follow.hint);
-    writeGuidanceLine('Then re-check with `npx -y -p @proofable/sdk proofable doctor --live`.');
+    writeGuidanceLine('Then re-check with `npx -y @proofable/sdk doctor --live`.');
     writeCliLine('');
     process.exitCode = 1;
     return;
@@ -2605,7 +2605,7 @@ async function runDoctor(options) {
           writeGuidanceLine('Hosted MCP is reachable. CLI cannot see host OAuth.');
         } else {
           writeGuidanceLine(
-            'MCP server was not reachable. Check your network or run `npx -y -p @proofable/sdk proofable doctor --live` again.'
+            'MCP server was not reachable. Check your network or run `npx -y @proofable/sdk doctor --live` again.'
           );
           payload.hasErrors = true;
         }
@@ -2621,7 +2621,7 @@ async function runDoctor(options) {
         const tools = payload.mcp.toolsCount ? `, ${payload.mcp.toolsCount} tools available` : '';
         logStep('ok', 'profile', `connected${handle}${wallet}${receipts}${tools}`);
         writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
-        writeGuidanceLine('Run `npx -y -p @proofable/sdk proofable examples` for starter prompts.');
+        writeGuidanceLine('Run `npx -y @proofable/sdk examples` for starter prompts.');
         if (payload.mountFilePresent) {
           const agentLabel = payload.mountAgentLabel || payload.mountAgentId || 'project mount';
           const agentStatus = payload.agentVerified ? ' (verified)' : payload.agentLinkStatus ? ` (${payload.agentLinkStatus})` : '';
@@ -2634,13 +2634,13 @@ async function runDoctor(options) {
               : payload.missingDelegation
                 ? 'permissions missing'
                 : 'mount stale';
-          logStep('warn', 'mount', `${reason}. Run \`npx -y -p @proofable/sdk proofable mount ${payload.mountAgentId || '<agentId>'} --apply <host>\``);
+          logStep('warn', 'mount', `${reason}. Run \`npx -y @proofable/sdk mount ${payload.mountAgentId || '<agentId>'} --apply <host>\``);
           payload.hasErrors = true;
         } else if (payload.agentVerified) {
           logStep('ok', 'agent', 'identity and permissions linked');
         } else if (payload.mountAgentId || payload.mountFilePresent) {
           writeGuidanceLine(
-            `Mounted agent is not fully linked yet. Run \`npx -y -p @proofable/sdk proofable mount ${payload.mountAgentId || '<agentId>'} --apply <host>\` after auth.`
+            `Mounted agent is not fully linked yet. Run \`npx -y @proofable/sdk mount ${payload.mountAgentId || '<agentId>'} --apply <host>\` after auth.`
           );
           payload.hasErrors = true;
         }
@@ -2654,9 +2654,9 @@ async function runDoctor(options) {
       }
     }
   } else if (liveAccessKey) {
-    writeGuidanceLine('Saved credential found. Run `npx -y -p @proofable/sdk proofable doctor --live` to confirm live connection.');
+    writeGuidanceLine('Saved credential found. Run `npx -y @proofable/sdk doctor --live` to confirm live connection.');
   } else if (hasCodex) {
-    writeGuidanceLine('Codex owns OAuth: run `npx -y -p @proofable/sdk proofable auth --client codex` or `codex mcp login proofable`.');
+    writeGuidanceLine('Codex owns OAuth: run `npx -y @proofable/sdk auth --client codex` or `codex mcp login proofable`.');
   } else {
     writeGuidanceLine(follow.hint);
   }
@@ -2673,7 +2673,7 @@ async function runDisconnect(options) {
   const token = resolveLiveAccessKey(options, scope, cwd);
   if (!token) {
     throw new Error(
-      'Credential required. Run `npx -y -p @proofable/sdk proofable disconnect --access-key <token>` or `proofable auth --oauth` for the CLI store.'
+      'Credential required. Run `npx -y @proofable/sdk disconnect --access-key <token>` or `proofable auth --oauth` for the CLI store.'
     );
   }
 
@@ -2754,7 +2754,7 @@ async function main() {
           printFlowSummary('auth', result.scope, result.results, {
             nextStep:
               result.hostSignInHint ||
-              'Run `npx -y -p @proofable/sdk proofable examples`, then ask your assistant to use Proofable.',
+              'Run `npx -y @proofable/sdk examples`, then ask your assistant to use Proofable.',
             cliOptions: options
           });
         }

@@ -370,9 +370,9 @@ describe('proofable CLI', () => {
 
     expect(stderr).toContain('would update ~/.codex/config.toml');
     expect(stderr).not.toContain('updated');
-    expect(stderr).toContain('proofable auth --client codex');
-    expect(stderr).toContain('npx -y -p @proofable/sdk proofable');
-    expect(stderr).toContain('proofable examples');
+    expect(stderr).toContain('@proofable/sdk auth --client codex');
+    expect(stderr).toContain('npx -y @proofable/sdk');
+    expect(stderr).toContain('@proofable/sdk examples');
     expect(stderr).toContain('Use Proofable before taking sensitive actions');
   });
 
@@ -408,7 +408,7 @@ describe('proofable CLI', () => {
     });
 
     await expect(runCli(['doctor', '--client', 'codex'], context)).rejects.toMatchObject({
-      stderr: expect.stringContaining('proofable setup --client codex')
+      stderr: expect.stringContaining('@proofable/sdk setup --client codex')
     });
   });
 

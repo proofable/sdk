@@ -61,20 +61,20 @@ describe('mcp-hosts', () => {
     expect(buildSetupCommandForClient('vscode')).toContain('--client vscode');
     expect(buildSetupCommandForClient('claude')).toContain('--client claude');
     expect(buildSetupCommandForClient('codex', 'npk_x')).toBe(
-      'npx -y -p @proofable/sdk proofable setup --client codex --access-key npk_x'
+      'npx -y @proofable/sdk setup --client codex --access-key npk_x'
     );
   });
 
   it('builds Codex-specific auth command and host-connect setup for Cursor', () => {
     expect(buildAuthCommandForClient('codex')).toContain('--client codex');
-    expect(buildAuthCommandForClient('cursor')).toContain('proofable setup');
+    expect(buildAuthCommandForClient('cursor')).toContain('@proofable/sdk setup');
     expect(buildAuthCommandForClient('cursor')).not.toContain('proofable auth');
   });
 
   it('maps product hosts to CLI clients', () => {
     expect(buildSetupCommandForHost('codex')).toContain('--client codex');
     expect(buildSetupCommandForHost('codex')).toBe(
-      'npx -y -p @proofable/sdk proofable setup --client codex'
+      'npx -y @proofable/sdk setup --client codex'
     );
   });
 

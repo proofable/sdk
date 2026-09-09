@@ -577,7 +577,7 @@ describe('ProofableClient', () => {
         accessGrant: {
           connectedAccountId: 'ca_1',
           toolkitSlug: 'github',
-          resources: [{ kind: 'repository', id: 'proofable/proofable' }]
+          resources: [{ kind: 'repository', id: 'proofable/sdk' }]
         }
       });
 
@@ -594,7 +594,7 @@ describe('ProofableClient', () => {
         accessGrant: {
           connectedAccountId: 'ca_1',
           toolkitSlug: 'github',
-          resources: [{ kind: 'repository', id: 'proofable/proofable' }]
+          resources: [{ kind: 'repository', id: 'proofable/sdk' }]
         }
       });
     });

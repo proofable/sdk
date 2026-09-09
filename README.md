@@ -1,8 +1,8 @@
 # @proofable/sdk
 
-Add portable identity, proof, access, payments, and agent permissions without replacing your authentication, payment, or agent stack.
+**Make it Proofable.**
 
-Proofable lets people and AI carry verified identity, context, authority, and evidence across products. Build faster onboarding, reusable access decisions, trusted agent actions, and paid workflows on one integration.
+Add reusable proofs, hosted verification, protected access, and agent authority without replacing the authentication, payment, policy, model, or runtime you already use.
 
 Proofable implements [CAIP-380 (Portable Proof)](https://github.com/ChainAgnostic/CAIPs/pull/380), a portable evidence format for carrying verifiable results across environments.
 
@@ -14,18 +14,18 @@ npm install @proofable/sdk
 
 ## Connect a supported MCP client
 
-Proofable MCP is the hosted connection for chat, IDEs, and job runtimes. Same profile, proofs, listings, and permissions.
+Proofable MCP is the hosted connection for supported chats, IDEs, and job runtimes. They can read the same profile, current proofs, listings, and permissions.
 
 Register the hosted remote, then click **Connect**:
 
 `https://mcp.proofable.me/mcp`
 
-Ask: **"Reuse what I already have. Before a sensitive action, check my current proofs."**
+Ask: **"Show my Proofable profile and current proofs."**
 
 Optional terminal installer (writes that URL and the public workflow skill):
 
 ```bash
-npx -y -p @proofable/sdk proofable setup
+npx -y @proofable/sdk setup
 ```
 
 Full steps: [MCP setup](https://docs.proofable.me/mcp/setup).
@@ -33,8 +33,8 @@ Full steps: [MCP setup](https://docs.proofable.me/mcp/setup).
 ## Connect an agent to a project
 
 ```bash
-proofable setup
-proofable mount <agentId> --apply <host>
+npx -y @proofable/sdk setup
+npx -y @proofable/sdk mount <agentId> --apply <host>
 ```
 
 Loads the agent's verified identity, scoped authority, and host rules into the project. See [Connect Agent Context](https://docs.proofable.me/agents/runtime-mount).
@@ -56,7 +56,8 @@ The hosted endpoint is always **`https://mcp.proofable.me/mcp`**. Marketplace, r
 - Server checks before access, rewards, payments, or actions
 - React gates with `VerifyGate`
 - Agent identity, controller-approved authority, and per-payment limits
-- MCP setup so any supported client can access the same profile, proofs, listings, and permissions
+- Marketplace listings, qualification, checkout, fulfillment, and access confirmation
+- MCP setup so supported clients can access the same profile, agents, private context, connections, listings, permissions, jobs, and proofs
 
 ## Hosted Verify
 
@@ -205,7 +206,7 @@ const client = new ProofableClient({
 
 ## MCP step-by-step
 
-Register `https://mcp.proofable.me/mcp`, then click **Connect** in the host MCP panel. Marketplace or registry install is enough. The terminal installer (`npx -y -p @proofable/sdk proofable setup`) writes that same URL and the public workflow skill when a plugin is not already present. When `PROOFABLE_ACCESS_KEY` is set, setup writes that server credential instead.
+Register `https://mcp.proofable.me/mcp`, then click **Connect** in the host MCP panel. Marketplace or registry install is enough. The terminal installer (`npx -y @proofable/sdk setup`) writes that same URL and the public workflow skill when a plugin is not already present. When `PROOFABLE_ACCESS_KEY` is set, setup writes that server credential instead.
 
 Marketplace install and host adapters: [MCP setup](https://docs.proofable.me/mcp/setup).
 

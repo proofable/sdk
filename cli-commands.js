@@ -13,7 +13,7 @@ export const PROOFABLE_PKG = '@proofable/sdk';
 export const PROOFABLE_INSTALL_CLI = `npm i -g ${PROOFABLE_PKG}`;
 
 /** Zero-install prefix , works without global install. */
-export const PROOFABLE_NPX = `npx -y -p ${PROOFABLE_PKG} proofable`;
+export const PROOFABLE_NPX = `npx -y ${PROOFABLE_PKG}`;
 
 /** Short commands (after `PROOFABLE_INSTALL_CLI`). */
 export const PROOFABLE_SETUP_CLI = 'proofable setup';
