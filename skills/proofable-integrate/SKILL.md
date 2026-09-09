@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires @proofable/sdk (npm) and a Proofable gate ID from proofable.me.
 metadata:
   author: Proofable
-  version: "1.3.9"
+  version: "0.1.0"
   homepage: https://docs.proofable.me/quickstart
 ---
 
