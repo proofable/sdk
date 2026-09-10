@@ -67,7 +67,7 @@ Read the proof ID (`qHash`) from the callback URL query string, then store it.
 
 ## Server: confirm access
 
-Before granting access or paying out, confirm the visitor still satisfies the gate. Every Proofable account has an address (passkey and OAuth included, no separate wallet required).
+Before granting access or paying out, confirm the visitor still satisfies the gate. Every Proofable account has an address, including passkey and OAuth accounts.
 
 ```js
 import { ProofableClient } from '@proofable/sdk';
@@ -115,4 +115,4 @@ The integration is complete when:
 
 Do not add extra Proofable concepts, tools, or surfaces unless the developer asks.
 
-Docs: [Start](https://docs.proofable.me) · [Hosted sign-in](https://docs.proofable.me/cookbook/auth-hosted-verify) · [Sell access](https://docs.proofable.me/quickstart)
+Docs: [Start](https://docs.proofable.me), [Hosted sign-in](https://docs.proofable.me/cookbook/auth-hosted-verify), [Sell access](https://docs.proofable.me/quickstart)

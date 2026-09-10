@@ -1,7 +1,7 @@
 {
   "name": "@proofable/sdk",
   "version": "0.1.0",
-  "description": "The portable trust harness SDK for AI agents, apps, access, and reusable proof.",
+  "description": "JavaScript SDK for Proofable verification, proof checks, and agent permissions.",
   "bin": {
     "proofable": "cli/proofable.mjs"
   },

@@ -1,8 +1,6 @@
-# @proofable/sdk
+# Proofable SDK
 
-**Make it Proofable.**
-
-Add reusable proofs, hosted verification, protected access, and agent authority without replacing the authentication, payment, policy, model, or runtime you already use.
+Add verification, reusable proof, and agent permissions to JavaScript apps.
 
 Proofable implements [CAIP-380 (Portable Proof)](https://github.com/ChainAgnostic/CAIPs/pull/380), a portable evidence format for carrying verifiable results across environments.
 
@@ -39,25 +37,13 @@ npx -y @proofable/sdk mount <agentId> --apply <host>
 
 Loads the agent's verified identity, scoped authority, and host rules into the project. See [Connect Agent Context](https://docs.proofable.me/agents/runtime-mount).
 
-## MCP docs
-
-| Topic | Link |
-| ----- | ---- |
-| Setup, JSON snippets, and the connect prompt | [MCP setup](https://docs.proofable.me/mcp/setup) |
-| Profile, proofs, permissions, and private context | [MCP overview](https://docs.proofable.me/mcp/overview) |
-| Host action decision | [First guarded action](https://docs.proofable.me/mcp/guarded-action) |
-| Discovery URLs | [Discovery and endpoints](https://docs.proofable.me/mcp/endpoints) |
-
-The hosted endpoint is always **`https://mcp.proofable.me/mcp`**. Marketplace, registry, URL-only config, or the terminal installer all register that same remote.
-
-## What you can ship
+## Common tasks
 
 - Hosted verification flows that return reusable portable proofs
 - Server checks before access, rewards, payments, or actions
 - React gates with `VerifyGate`
 - Agent identity, controller-approved authority, and per-payment limits
 - Marketplace listings, qualification, checkout, fulfillment, and access confirmation
-- MCP setup so supported clients can access the same profile, agents, private context, connections, listings, permissions, jobs, and proofs
 
 ## Hosted Verify
 
@@ -203,12 +189,6 @@ const client = new ProofableClient({
 `appId` is optional public attribution for advanced server/app flows. Published gate checkout and `gateCheck({ gateId })` do not require it.
 
 `apiKey` / `npk_*` is optional and server-side only.
-
-## MCP step-by-step
-
-Register `https://mcp.proofable.me/mcp`, then click **Connect** in the host MCP panel. Marketplace or registry install is enough. The terminal installer (`npx -y @proofable/sdk setup`) writes that same URL and the public workflow skill when a plugin is not already present. When `PROOFABLE_ACCESS_KEY` is set, setup writes that server credential instead.
-
-Marketplace install and host adapters: [MCP setup](https://docs.proofable.me/mcp/setup).
 
 ## Docs
 
