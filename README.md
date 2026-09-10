@@ -43,7 +43,7 @@ import { getHostedCheckoutUrl } from '@proofable/sdk';
 
 const url = getHostedCheckoutUrl({
   gateId: 'gate_your-app-name',
-  returnUrl: 'https://yourapp.com/auth/callback'
+  returnUrl: 'https://app.example.com/auth/callback'
 });
 
 window.location.assign(url);
@@ -61,7 +61,7 @@ const url = getHostedAgentCreateUrl({
   agentWallet,
   controllerWallet,
   identityQHash,
-  returnUrl: 'https://yourapp.com/agents/callback'
+  returnUrl: 'https://app.example.com/agents/callback'
 });
 ```
 

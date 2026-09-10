@@ -58,7 +58,7 @@ import { getHostedCheckoutUrl } from '@proofable/sdk';
 window.location.assign(
   getHostedCheckoutUrl({
     gateId: 'gate_your-app-name',
-    returnUrl: 'https://myapp.com/auth/callback',
+    returnUrl: 'https://app.example.com/auth/callback',
   }),
 );
 ```
