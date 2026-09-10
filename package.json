@@ -1,7 +1,7 @@
 {
   "name": "@proofable/sdk",
   "version": "0.1.0",
-  "description": "JavaScript SDK for Proofable verification, proof checks, and agent permissions.",
+  "description": "JavaScript SDK and CLI for AI agent permissions, identity verification, and reusable proof.",
   "bin": {
     "proofable": "cli/proofable.mjs"
   },
@@ -77,18 +77,20 @@
   },
   "keywords": [
     "proofable",
-    "portable-proof",
-    "caip-380",
+    "sdk",
+    "cli",
     "ai-agents",
     "agent-permissions",
     "agent-identity",
-    "mcp",
-    "model-context-protocol",
-    "identity",
     "authorization",
     "access-control",
-    "verification",
-    "sdk"
+    "identity-verification",
+    "proof-of-human",
+    "reusable-proof",
+    "portable-proof",
+    "caip-380",
+    "mcp",
+    "react"
   ],
   "author": "Proofable",
   "license": "Apache-2.0",
@@ -99,7 +101,7 @@
   "bugs": {
     "url": "https://github.com/proofable/sdk/issues"
   },
-  "homepage": "https://proofable.me",
+  "homepage": "https://docs.proofable.me/sdks/javascript",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"

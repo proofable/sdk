@@ -1,6 +1,6 @@
 # Proofable Verified Handle React Example
 
-Claim a handle, display a Proofable Proof Badge, and gate a creator action.
+Claim a handle, show a `ProofBadge`, and gate a creator action.
 
 ## Run
 

@@ -1,53 +1,42 @@
 # Proofable SDK
 
-Add verification, reusable proof, and agent permissions to JavaScript apps.
+[![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/@proofable/sdk)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-Proofable implements [CAIP-380 (Portable Proof)](https://github.com/ChainAgnostic/CAIPs/pull/380), a portable evidence format for carrying verifiable results across environments.
+JavaScript SDK and CLI for AI agent permissions, identity verification, and reusable proof. Check what a user or agent may do before access, payment, or action, and reuse the proof instead of repeating the check.
 
-## Install (library)
+Requires Node.js 20 or later.
+
+## Install
 
 ```bash
 npm install @proofable/sdk
 ```
 
-## Connect a supported MCP client
+## Check access on your server
 
-Proofable MCP is the hosted connection for supported chats, IDEs, and job runtimes. They can read the same profile, current proofs, listings, and permissions.
+Use `gateCheck` from trusted server code before access:
 
-Register the hosted remote, then click **Connect**:
+```js
+import { ProofableClient } from '@proofable/sdk';
 
-`https://mcp.proofable.me/mcp`
+const client = new ProofableClient();
 
-Ask: **"Show my Proofable profile and current proofs."**
+const result = await client.gateCheck({
+  gateId: 'gate_your-app-name',
+  address: '0x...'
+});
 
-Optional terminal installer (writes that URL and the public workflow skill):
-
-```bash
-npx -y @proofable/sdk setup
+if (result.data?.gate?.allRequiredSatisfied !== true) {
+  throw new Error('Access denied');
+}
 ```
 
-Full steps: [MCP setup](https://docs.proofable.me/mcp/setup).
+Never ship access keys in browser code.
 
-## Connect an agent to a project
+## Send users to Hosted Verify
 
-```bash
-npx -y @proofable/sdk setup
-npx -y @proofable/sdk mount <agentId> --apply <host>
-```
-
-Loads the agent's verified identity, scoped authority, and host rules into the project. See [Connect Agent Context](https://docs.proofable.me/agents/runtime-mount).
-
-## Common tasks
-
-- Hosted verification flows that return reusable portable proofs
-- Server checks before access, rewards, payments, or actions
-- React gates with `VerifyGate`
-- Agent identity, controller-approved authority, and per-payment limits
-- Marketplace listings, qualification, checkout, fulfillment, and access confirmation
-
-## Hosted Verify
-
-Use Hosted Verify when Proofable should handle the signing step outside your app UI. Prefer a **published gate**:
+Hosted Verify handles signing outside your app. Prefer a published gate:
 
 ```js
 import { getHostedCheckoutUrl } from '@proofable/sdk';
@@ -60,9 +49,9 @@ const url = getHostedCheckoutUrl({
 window.location.assign(url);
 ```
 
-After completion, Proofable redirects back with a proof ID in the `qHash` field. Store the proof ID with your user or record.
+After completion, Proofable redirects back with a proof ID in the `qHash` field. Store it with your user or record.
 
-Dedicated agent setup keeps the agent-signed identity step separate from the approving account:
+To set up a dedicated agent, keep its signed identity step separate from the approving account:
 
 ```js
 import { getHostedAgentCreateUrl } from '@proofable/sdk';
@@ -78,9 +67,40 @@ const url = getHostedAgentCreateUrl({
 
 When `identityQHash` is present, Hosted Verify requests only `agent-delegation`.
 
-## In-app signing
+## Gate a React page
 
-Use this only when your app intentionally handles signing. This example is EVM. For non-EVM accounts, pass the provider explicitly and include `chain` as a CAIP-2 value.
+```jsx
+import { VerifyGate } from '@proofable/sdk/widgets';
+
+export function Page() {
+  return (
+    <VerifyGate
+      gateId="gate_your-app-name"
+      onVerified={result => {
+        console.log(result.qHash || result.qHashes);
+      }}
+    >
+      <section>Unlocked content</section>
+    </VerifyGate>
+  );
+}
+```
+
+## Connect AI clients and agents
+
+The `proofable` CLI connects supported MCP clients to `https://mcp.proofable.me/mcp` and loads agent context into a project:
+
+```bash
+npx -y @proofable/sdk setup
+npx -y @proofable/sdk mount <agentId> --apply <host>
+npx -y @proofable/sdk doctor --live
+```
+
+`--apply` accepts `cursor`, `claude`, or `codex`. See [MCP setup](https://docs.proofable.me/mcp/setup) and [Connect agent context](https://docs.proofable.me/agents/runtime-mount).
+
+## Sign in your app
+
+Use this only when your app handles signing itself. This example is EVM. For non-EVM accounts, pass the provider explicitly and include `chain` as a CAIP-2 value.
 
 ```js
 import { ProofableClient } from '@proofable/sdk';
@@ -111,48 +131,6 @@ const proof = await client.verify({
 console.log(proof.qHash);
 console.log(proof.proofUrl);
 ```
-
-## React widget
-
-Use `VerifyGate` with your published `gateId`:
-
-```jsx
-import { VerifyGate } from '@proofable/sdk/widgets';
-
-export function Page() {
-  return (
-    <VerifyGate
-      gateId="gate_your-app-name"
-      onVerified={result => {
-        console.log(result.qHash || result.qHashes);
-      }}
-    >
-      <section>Unlocked content</section>
-    </VerifyGate>
-  );
-}
-```
-
-## Check proofs
-
-Use `gateCheck` from trusted server code when you need allow/deny before access:
-
-```js
-import { ProofableClient } from '@proofable/sdk';
-
-const client = new ProofableClient();
-
-const result = await client.gateCheck({
-  gateId: 'gate_your-app-name',
-  address: '0x...'
-});
-
-if (result.data?.gate?.allRequiredSatisfied !== true) {
-  throw new Error('Access denied');
-}
-```
-
-Never ship access keys in browser code.
 
 ## Core methods
 
@@ -186,16 +164,21 @@ const client = new ProofableClient({
 });
 ```
 
-`appId` is optional public attribution for advanced server/app flows. Published gate checkout and `gateCheck({ gateId })` do not require it.
-
-`apiKey` / `npk_*` is optional and server-side only.
+`appId` is optional public attribution for advanced server flows. Published gate checkout and `gateCheck({ gateId })` do not require it. `apiKey` (`npk_*`) is optional and server-side only.
 
 ## Docs
 
-- Start: https://docs.proofable.me
-- Sell access: https://docs.proofable.me/quickstart
-- JavaScript SDK: https://docs.proofable.me/sdks/javascript
-- Ownership Basic: https://docs.proofable.me/verification/ownership-basic
-- Widgets: https://docs.proofable.me/widgets/overview
-- MCP: https://docs.proofable.me/mcp/overview
-- API: https://docs.proofable.me/api/overview
+- [Quickstart](https://docs.proofable.me/quickstart)
+- [JavaScript SDK](https://docs.proofable.me/sdks/javascript)
+- [CLI](https://docs.proofable.me/sdks/cli)
+- [Widgets](https://docs.proofable.me/widgets/overview)
+- [HTTP API](https://docs.proofable.me/api/overview)
+
+Proofable implements [CAIP-380 Portable Proof](https://docs.proofable.me/learn/standards/caip-380), so a proof can be checked outside Proofable.
+
+## Support
+
+- Issues: [github.com/proofable/sdk/issues](https://github.com/proofable/sdk/issues)
+- Security: [SECURITY.md](./SECURITY.md)
+
+Apache-2.0. Proofable is published by NEUS Network, Inc.
