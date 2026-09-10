@@ -77,7 +77,7 @@ export {
   evaluateMountFileHealth
 } from './runtime-mount.js';
 
-// Node-only adapters (fs/path): import `@proofable/sdk/runtime-adapters` , not re-exported here (Next/webpack safe).
+// Node-only adapters (fs/path): import `@proofable/sdk/runtime-adapters` — not re-exported here (Next/webpack safe).
 
 export {
   SDKError,

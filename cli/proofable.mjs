@@ -41,7 +41,7 @@ const HOST_CONNECT_CLIENTS = ['cursor', 'vscode', 'claude'];
 const CODEX_OAUTH_SCOPES = 'neus:core,neus:profile,neus:secrets,offline_access';
 
 // ---------------------------------------------------------------------------
-// OAuth token store (~/.proofable/mcp-tokens.json , gitignored user-scope cache)
+// OAuth token store (~/.proofable/mcp-tokens.json — gitignored user-scope cache)
 // ---------------------------------------------------------------------------
 // Holds the refresh token returned alongside the short-lived OAuth access
 // token. Powers the `proofable refresh` escape hatch: when an IDE MCP client's
@@ -56,7 +56,7 @@ const CODEX_OAUTH_SCOPES = 'neus:core,neus:profile,neus:secrets,offline_access';
 const PROOFABLE_HOME_DIR = path.join(os.homedir(), '.proofable');
 const PROOFABLE_TOKEN_STORE_PATH = path.join(PROOFABLE_HOME_DIR, 'mcp-tokens.json');
 const PROOFABLE_OAUTH_CLIENT_ID = 'proofable-cli';
-// RFC 9207 , the expected issuer returned in the authorization response `iss`
+// RFC 9207 — the expected issuer returned in the authorization response `iss`
 // parameter. Matches the `issuer` field in /.well-known/oauth-authorization-server.
 const PROOFABLE_OAUTH_ISSUER = 'https://proofable.me';
 const PROOFABLE_MCP_RESOURCE = 'https://mcp.proofable.me/mcp';
@@ -1836,7 +1836,7 @@ async function runMount(options) {
 async function runLiveMcpDiagnostics(accessKey) {
   // Even without a static access key, attempt an unauthenticated initialize.
   // The MCP server responds with 401 + WWW-Authenticate (OAuth challenge) when
-  // unauthenticated , that confirms the server is reachable and OAuth is configured.
+  // unauthenticated — that confirms the server is reachable and OAuth is configured.
   // With an access key, the full authenticated flow runs.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -1855,7 +1855,7 @@ async function runLiveMcpDiagnostics(accessKey) {
     if (!init.response.ok || init.json?.error) {
       // 401 means the server is reachable but requires authentication.
       // For URL-only OAuth configs (no accessKey), this is the expected
-      // response , the IDE handles OAuth, not the CLI. Report as reachable.
+      // response — the IDE handles OAuth, not the CLI. Report as reachable.
       const isAuthRequired = init.response.status === 401;
       return {
         live: true,
@@ -2037,7 +2037,7 @@ async function runAuthBrowser(options) {
         return;
       }
 
-      // RFC 9207 issuer validation , 2026-07-28 MCP auth hardening headline.
+      // RFC 9207 issuer validation — 2026-07-28 MCP auth hardening headline.
       // When the AS returns `iss`, the client MUST confirm it matches the expected
       // issuer (https://proofable.me). A mismatch indicates an IdP mix-up attack.
       // When the AS omits `iss` (e.g. older deployments), we fail closed too,

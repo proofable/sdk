@@ -1,6 +1,6 @@
 /**
  * Proofable mark + OG URLs hosted on proofable.me.
- * Stable paths , replace assets in place on proofable.me (no query-string versions).
+ * Stable paths — replace assets in place on proofable.me (no query-string versions).
  */
 export const PROOFABLE_MARK_CDN_ORIGIN = 'https://proofable.me';
 

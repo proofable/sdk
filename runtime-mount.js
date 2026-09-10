@@ -1,5 +1,5 @@
 /**
- * Runtime Mount , Trusted Agent context bundle (proofable.runtime-mount.v1).
+ * Runtime Mount — Trusted Agent context bundle (proofable.runtime-mount.v1).
  * Shared shape for CLI, integrators, and the proofable_agent_mount response.
  */
 

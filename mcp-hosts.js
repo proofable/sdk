@@ -73,7 +73,7 @@ export const IDE_HOST_BRAND_LOGOS = {
 function normalizeAccessKey(accessKey) {
   const key = String(accessKey || '').trim();
   // OAuth access tokens are JWTs (three dot-separated base64url segments). Never write
-  // them as a static Bearer header , return URL-only so the IDE runs OAuth itself.
+  // them as a static Bearer header — return URL-only so the IDE runs OAuth itself.
   if (key && !key.startsWith('npk_') && key.split('.').length === 3) {
     return '';
   }
@@ -83,7 +83,7 @@ function normalizeAccessKey(accessKey) {
 /**
  * Build the MCP HTTP server config for an IDE/client.
  *
- * Two paths, one session model , same Proofable Profile/Account either way:
+ * Two paths, one session model — same Proofable Profile/Account either way:
  *
  * - `npk_…` Profile access keys are durable (never expire). Written as a static
  *   `Authorization: Bearer npk_…` header. Used for servers, CI, and automation
