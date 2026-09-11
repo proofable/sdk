@@ -72,7 +72,7 @@
     "build:widgets": "npx esbuild widgets/verify-gate/VerifyGate.jsx widgets/verify-gate/ProofBadge.jsx --bundle --platform=browser --format=esm --outdir=widgets/verify-gate/dist --jsx=automatic --legal-comments=none --external:react --external:react-dom --external:react/jsx-runtime --external:@proofable/sdk/client",
     "build:cjs": "npx esbuild index.js client.js utils.js errors.js gates.js runtime-mount.js runtime-adapters.js sponsor.js brand-mark.js --bundle --platform=node --format=cjs --outdir=cjs --out-extension:.js=.cjs --legal-comments=none --external:ethers --external:@zkpassport/sdk --external:react --external:react-dom --external:react/jsx-runtime",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run lint && npm test && npm run build",
+    "prepublishOnly": "npm run lint && npm test",
     "proofable": "node cli/proofable.mjs"
   },
   "keywords": [

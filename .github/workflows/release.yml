@@ -25,6 +25,7 @@ jobs:
       - run: npm run lint
       - run: npm test --silent
       - run: npm audit --omit=dev --audit-level=high
+      # prepack (triggered by pack) is the single artifact build; publish skips lifecycle scripts.
       - run: npm pack --dry-run
       - name: Publish @proofable/sdk
         shell: bash
@@ -35,6 +36,8 @@ jobs:
           if npm view "$name@$version" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
             echo "$name@$version is already published; skipping npm publish."
           else
-            npm publish --access public --registry https://registry.npmjs.org
+            # Lifecycle scripts are skipped: lint/test/build already ran above (single execution).
+            # Artifacts were built by the explicit build step and are packed as-is.
+            npm publish --ignore-scripts --access public --registry https://registry.npmjs.org
           fi
 
