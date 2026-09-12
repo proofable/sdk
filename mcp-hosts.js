@@ -37,8 +37,15 @@ export const PROOFABLE_MCP_SETUP_DOCS_URL = 'https://docs.proofable.me/mcp/setup
 /** CLI `proofable setup --client` values. */
 export const MCP_INSTALL_CLIENTS = ['claude', 'codex', 'cursor', 'vscode'];
 
-/** Product Profile "Connect in" hosts. */
-export const MCP_INSTALL_HOSTS = ['cursor', 'claude', 'codex', 'vscode'];
+/**
+ * Deep-link shortcut hosts the product UI renders one-click buttons for.
+ *
+ * These four are conveniences, not the compatibility boundary: Proofable works
+ * with any MCP client through the canonical endpoint. Product surfaces pair
+ * this list with an always-present generic/any-client path so the list never
+ * reads as "these are the only supported hosts".
+ */
+export const MCP_INSTALL_SHORTCUT_HOSTS = ['cursor', 'claude', 'codex', 'vscode'];
 
 export const IDE_HOST_LABELS = {
   cursor: 'Cursor',
@@ -141,6 +148,59 @@ export function buildCursorMcpConfig(accessKey) {
  */
 export function buildVsCodeMcpConfig(accessKey) {
   return buildMcpHttpConfig(accessKey);
+}
+
+/**
+ * Build the copy-paste `mcpServers` JSON block for any generic MCP client
+ * (ChatGPT, Claude Desktop, Warp, headless agents, gateways, custom hosts).
+ *
+ * This is the universal connection contract, not a host-specific adapter:
+ * URL-only means OAuth (the host runs Connect + PKCE); an `npk_*` Profile
+ * access key is written as a static Bearer header for servers, CI, and
+ * automation. OAuth JWTs are never frozen into static config.
+ *
+ * With `envVar: true` the Authorization value becomes
+ * `${PROOFABLE_ACCESS_KEY}` (the canonical CLI/CI environment variable), so
+ * the printed block never contains a secret. This is explicit caller intent:
+ * it always emits the access-key header template, with or without a key in
+ * hand — the runtime that resolves the interpolation supplies the value.
+ *
+ * @param {string | null | undefined} accessKey
+ * @param {{ envVar?: boolean }} [options] - emit the `${PROOFABLE_ACCESS_KEY}` template instead of a literal key
+ * @returns {string} JSON text, ready to paste into any client's MCP config
+ */
+export function buildGenericMcpJsonConfig(accessKey, options = {}) {
+  if (options?.envVar) {
+    return JSON.stringify(
+      {
+        mcpServers: {
+          [PROOFABLE_MCP_SERVER_NAME]: {
+            type: 'http',
+            url: PROOFABLE_MCP_URL,
+            headers: { Authorization: 'Bearer ${PROOFABLE_ACCESS_KEY}' }
+          }
+        }
+      },
+      null,
+      2,
+    );
+  }
+  const key = normalizeAccessKey(accessKey);
+  if (!key) return buildGenericMcpJsonConfigUrlOnly();
+  return JSON.stringify(
+    { mcpServers: { [PROOFABLE_MCP_SERVER_NAME]: buildMcpHttpConfig(key) } },
+    null,
+    2,
+  );
+}
+
+/** URL-only OAuth block: any host runs Connect + PKCE on the canonical endpoint. */
+export function buildGenericMcpJsonConfigUrlOnly() {
+  return JSON.stringify(
+    { mcpServers: { [PROOFABLE_MCP_SERVER_NAME]: { type: 'http', url: PROOFABLE_MCP_URL } } },
+    null,
+    2,
+  );
 }
 
 /**

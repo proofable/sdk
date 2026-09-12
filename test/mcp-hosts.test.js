@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MCP_INSTALL_HOSTS,
+  MCP_INSTALL_SHORTCUT_HOSTS,
   PROOFABLE_MCP_URL,
   buildAuthCommandForClient,
   buildCursorMcpConfig,
   buildCursorMcpInstallHref,
+  buildGenericMcpJsonConfig,
+  buildGenericMcpJsonConfigUrlOnly,
   buildMcpHttpConfig,
   buildSetupCliCommandForHost,
   buildSetupCommandForClient,
@@ -14,7 +16,7 @@ import {
 
 describe('mcp-hosts', () => {
   it('lists product install hosts', () => {
-    expect(MCP_INSTALL_HOSTS).toEqual(['cursor', 'claude', 'codex', 'vscode']);
+    expect(MCP_INSTALL_SHORTCUT_HOSTS).toEqual(['cursor', 'claude', 'codex', 'vscode']);
   });
 
   it('builds Proofable HTTP MCP config', () => {
@@ -53,6 +55,40 @@ describe('mcp-hosts', () => {
       url: PROOFABLE_MCP_URL,
       headers: { Authorization: 'Bearer npk_test' }
     });
+  });
+
+  it('builds the universal generic mcpServers block for any client', () => {
+    // No key: URL-only OAuth block — any host runs Connect + PKCE. Never a
+    // header referencing an unset environment variable.
+    expect(JSON.parse(buildGenericMcpJsonConfig())).toEqual({
+      mcpServers: { proofable: { type: 'http', url: PROOFABLE_MCP_URL } }
+    });
+    expect(buildGenericMcpJsonConfig()).toBe(buildGenericMcpJsonConfigUrlOnly());
+
+    // OAuth JWTs are never frozen into static config — falls back to URL-only.
+    expect(JSON.parse(buildGenericMcpJsonConfig('eyJhbGciOiJIUzI1NiJ9.e30.doz'))).toEqual(
+      JSON.parse(buildGenericMcpJsonConfigUrlOnly())
+    );
+
+    // Literal npk key: static Bearer header for servers, CI, and automation.
+    expect(JSON.parse(buildGenericMcpJsonConfig('npk_test'))).toEqual({
+      mcpServers: {
+        proofable: {
+          type: 'http',
+          url: PROOFABLE_MCP_URL,
+          headers: { Authorization: 'Bearer npk_test' }
+        }
+      }
+    });
+
+    // envVar mode is explicit template intent: always the header template,
+    // with or without a key in hand, and never the secret value.
+    const envVarBlock = buildGenericMcpJsonConfig('npk_secretvalue', { envVar: true });
+    expect(envVarBlock).not.toContain('npk_secretvalue');
+    expect(envVarBlock).toContain('Bearer ${PROOFABLE_ACCESS_KEY}');
+    expect(buildGenericMcpJsonConfig(null, { envVar: true })).toBe(
+      buildGenericMcpJsonConfig('npk_secretvalue', { envVar: true })
+    );
   });
 
   it('builds setup commands per client', () => {

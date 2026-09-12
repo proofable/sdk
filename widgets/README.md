@@ -36,4 +36,4 @@ import { ProofBadge } from '@proofable/sdk/widgets';
 
 - [Widgets overview](https://docs.proofable.me/widgets/overview)
 - [VerifyGate](https://docs.proofable.me/widgets/verifygate)
-- [Sell access](https://docs.proofable.me/quickstart)
+- [Sell access](https://docs.proofable.me/gates/sell-access)

@@ -6,7 +6,7 @@ compatibility: Requires @proofable/sdk (npm) and a Proofable gate ID from proofa
 metadata:
   author: Proofable
   version: "0.1.0"
-  homepage: https://docs.proofable.me/quickstart
+  homepage: https://docs.proofable.me/gates/sell-access
 ---
 
 # Integrate Proofable
@@ -115,4 +115,4 @@ The integration is complete when:
 
 Do not add extra Proofable concepts, tools, or surfaces unless the developer asks.
 
-Docs: [Start](https://docs.proofable.me), [Hosted sign-in](https://docs.proofable.me/cookbook/auth-hosted-verify), [Sell access](https://docs.proofable.me/quickstart)
+Docs: [Getting started](https://docs.proofable.me), [Hosted sign-in](https://docs.proofable.me/verification/hosted), [Sell access](https://docs.proofable.me/gates/sell-access)

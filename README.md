@@ -88,10 +88,11 @@ export function Page() {
 
 ## Connect AI clients and agents
 
-The `proofable` CLI connects supported MCP clients to `https://mcp.proofable.me/mcp` and loads agent context into a project:
+Any MCP client connects to `https://mcp.proofable.me/mcp`. Interactive clients click **Connect** and sign in with OAuth; servers and CI use a Profile access key as a Bearer token from `PROOFABLE_ACCESS_KEY`. The CLI writes the same entry for supported clients and loads agent context into a project:
 
 ```bash
 npx -y @proofable/sdk setup
+npx -y @proofable/sdk setup --access-key $PROOFABLE_ACCESS_KEY
 npx -y @proofable/sdk mount <agentId> --apply <host>
 npx -y @proofable/sdk doctor --live
 ```
@@ -168,7 +169,7 @@ const client = new ProofableClient({
 
 ## Docs
 
-- [Quickstart](https://docs.proofable.me/quickstart)
+- [Getting started](https://docs.proofable.me/)
 - [JavaScript SDK](https://docs.proofable.me/sdks/javascript)
 - [CLI](https://docs.proofable.me/sdks/cli)
 - [Widgets](https://docs.proofable.me/widgets/overview)

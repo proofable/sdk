@@ -6,7 +6,13 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
-(nothing yet)
+### Added
+
+- **Generic MCP config builder.** `buildGenericMcpJsonConfig` and `buildGenericMcpJsonConfigUrlOnly` from `@proofable/sdk/mcp-hosts` produce the copy-paste `mcpServers` JSON block for any MCP client (ChatGPT, Claude Desktop, headless agents, gateways). URL-only output is the OAuth path; an `npk_*` Profile access key becomes a static `Authorization: Bearer` header. `{ envVar: true }` prints `Bearer ${PROOFABLE_ACCESS_KEY}` so published blocks never contain a real key.
+
+### Changed
+
+- **Install host constant.** `MCP_INSTALL_HOSTS` is now `MCP_INSTALL_SHORTCUT_HOSTS`. The four entries (cursor, claude, codex, vscode) are deep-link conveniences, not the compatibility boundary; any MCP client connects through the canonical endpoint.
 
 ## [0.1.0] - 2026-09-06
 

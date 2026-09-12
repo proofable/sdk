@@ -2,7 +2,7 @@
 
 Use this example when your backend already holds a wallet key or signer and you want to create Proofable portable proofs server-side.
 
-For product flows with user signing, prefer [Hosted Verify](https://docs.proofable.me/cookbook/auth-hosted-verify) or browser `client.verify()`.
+For product flows with user signing, prefer [Hosted Verify](https://docs.proofable.me/verification/hosted) or browser `client.verify()`.
 
 ## Run it
 

@@ -23,5 +23,5 @@ npm run dev
 
 ## Docs
 
-- [Verified Handles Cookbook](https://docs.proofable.me/cookbook/verified-handles)
+- [Account ownership](https://docs.proofable.me/verification/accounts)
 - [SDK README](../../README.md)

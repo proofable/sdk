@@ -1473,7 +1473,7 @@ declare module '@proofable/sdk/mcp-hosts' {
   export const PROOFABLE_MCP_URL: string;
   export const PROOFABLE_MCP_SETUP_DOCS_URL: string;
   export const MCP_INSTALL_CLIENTS: string[];
-  export const MCP_INSTALL_HOSTS: string[];
+  export const MCP_INSTALL_SHORTCUT_HOSTS: string[];
   export const IDE_HOST_LABELS: Record<string, string>;
   export const IDE_HOST_BRAND_LOGOS: Record<string, string>;
   export const PROOFABLE_PKG: string;
@@ -1496,6 +1496,8 @@ declare module '@proofable/sdk/mcp-hosts' {
   export function buildMcpHttpConfig(accessKey?: string | null): { type: 'http'; url: string; headers?: { Authorization: string } };
   export function buildCursorMcpConfig(accessKey?: string | null): { url: string; headers?: { Authorization: string } };
   export function buildVsCodeMcpConfig(accessKey?: string | null): { type: 'http'; url: string; headers?: { Authorization: string } };
+  export function buildGenericMcpJsonConfig(accessKey?: string | null, options?: { envVar?: boolean }): string;
+  export function buildGenericMcpJsonConfigUrlOnly(): string;
   export function buildAuthCommandForClient(client: 'claude' | 'codex' | 'cursor' | 'vscode'): string;
   export function buildSetupCommandForClient(client: 'claude' | 'codex' | 'cursor' | 'vscode', accessKey?: string | null): string;
   export function buildSetupCommandForHost(host: 'cursor' | 'claude' | 'codex', accessKey?: string | null): string;
