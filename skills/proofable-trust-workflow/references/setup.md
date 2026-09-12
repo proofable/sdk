@@ -28,7 +28,7 @@ Create access keys under **Account → Access keys** on [proofable.me](https://p
 
 Hosted MCP: **`https://mcp.proofable.me/mcp`**
 
-After Connect, call `proofable_context`. To sell: set payouts at https://proofable.me/profile?tab=treasury, then create a listing at https://proofable.me/profile/portals/new. Full page: https://docs.proofable.me/mcp/setup
+After Connect, call `proofable_context`. To sell: set payouts at https://proofable.me/profile?tab=credits, then create a listing at https://proofable.me/profile/portals/new. Full page: https://docs.proofable.me/mcp/setup
 
 ## Connect an agent to a project
 
