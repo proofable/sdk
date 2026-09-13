@@ -188,7 +188,7 @@
     proofUrl?: string | null;
     success: boolean;
     status: VerificationStatus;
-    data?: {
+    data: {
       qHash?: string;
       status: string;
       walletAddress: string;
@@ -698,8 +698,12 @@
   }
 
   export interface GateCheckApiParams {
-    address: string;
-    /** Published gate handle; resolves checks server-side (preferred public path). */
+    address?: string;
+    /** Subject account. Bare address, CAIP-10, or did:pkh. New integrations use `{ accountId }`. */
+    subject?: { accountId: string; chain?: string } | { address: string; chain?: string } | string;
+    /** Inline Gate Policy. Mutually exclusive with `gateId`. Uses POST /proofs/check. */
+    gate?: GateRequirement[];
+    /** Optional published listing handle retained for checkout compatibility. */
     gateId?: string;
     verifierIds?: string[] | string;
     requireAll?: boolean;
@@ -752,6 +756,15 @@
 
   export interface GateCheckApiResponse {
     success: boolean;
+    satisfied: boolean;
+    policyHash: string | null;
+    gateId: string | null;
+    subject: string;
+    requirements: GateRequirement[] | null;
+    missing: string[];
+    proofs: string[];
+    existing: Record<string, any>;
+    expiresAt: string | number | null;
     data?: {
       eligible: boolean;
       matchedCount?: number;
@@ -760,17 +773,18 @@
       projections?: Array<Record<string, any>> | null;
       criteria?: Record<string, any>;
       /**
-       * Per-requirement gate evaluation , present whenever `gateId` was passed.
+        * Per-requirement evaluation returned for inline policies and persisted listings.
        * `allRequiredSatisfied === true` is the ONLY readiness signal for gate
        * checkout; `eligible`/`matchedCount` alone are not sufficient.
        */
       gate?: {
         gateId: string | null;
+        policyHash?: string;
         allRequiredSatisfied: boolean;
         satisfiedVerifierIds: string[];
         missingVerifierIds: string[];
-        /** verifierId → qHash map for `options.reusedVerifierProofs` on submit (requires includeQHashes=true). */
-        reusedVerifierProofs?: Record<string, string>;
+        /** verifierId to one or more qHashes for checkout reuse (requires includeQHashes=true). */
+        reusedVerifierProofs?: Record<string, string | string[]>;
         /** Per-requirement rows (requires includeQHashes=true). */
         rows?: Array<{
           verifierId: string;
@@ -812,6 +826,16 @@
   export function createGate(
     requirements: Array<CoreVerifierId | GateRequirement>
   ): GateRequirement[];
+
+  export function defineGate(
+    requirements: Array<CoreVerifierId | GateRequirement | string>
+  ): GateRequirement[];
+
+  export function sanitizeGateRequirements(input: unknown): GateRequirement[];
+
+  export function hashGatePolicy(requirements: unknown): string;
+
+  export function resolveGateSubjectAccountId(raw: unknown): string;
 
   export function combineGates(
     ...gates: GateRequirement[][]
@@ -1087,7 +1111,10 @@
 
 declare module '@proofable/sdk/widgets' {
   export interface VerifyGateProps {
-    /** Published gate checkout handle (default integration path). */
+    /** Inline Gate Policy. Mutually exclusive with `gateId`. */
+    gate?: Array<{ verifierId: string; match?: Array<{ path: string; op?: string; value?: string }>; optional?: boolean; minCount?: number; maxAgeMs?: number } | string>;
+    subject?: { accountId?: string; address?: string } | string;
+    /** Published gate checkout handle (optional persist + commerce path). */
     gateId?: string;
     requiredVerifiers?: string[];
     onVerified?: (result: {
@@ -1253,7 +1280,10 @@ declare module '@proofable/sdk/errors' {
     constructor(message: string, code?: string, details?: unknown);
   }
   export class ApiError extends SDKError {
-    static fromResponse(response: { status: number; statusText?: string }, payload?: unknown): ApiError;
+    statusCode: number;
+    isPaymentRequired?: boolean;
+    paymentRequired?: string | null;
+    static fromResponse(response: { status?: number; statusCode?: number; headers?: { get?: (name: string) => string | null } | Record<string, string> }, payload?: unknown): ApiError;
   }
   export class ValidationError extends SDKError {}
   export class NetworkError extends SDKError {}
@@ -1547,5 +1577,7 @@ declare module '@proofable/sdk/brand-mark' {
   export const PROOFABLE_MARK_CDN_ORIGIN: string;
   export function brandPackUrl(file: string): string;
   export const PROOFABLE_DEFAULT_MARK_URL: string;
+  export const PROOFABLE_COMPANY_LOGO_URL: string;
+  export const PROOFABLE_COMPANY_LOGO_DARK_URL: string;
   export const PROOFABLE_DEFAULT_OG_IMAGE_URL: string;
 }

@@ -24,6 +24,20 @@ describe('error classes', () => {
     expect(e.isServerError).toBe(true);
   });
 
+  it('ApiError surfaces x402 PAYMENT-REQUIRED on 402', () => {
+    const e = ApiError.fromResponse(
+      {
+        status: 402,
+        headers: { get: (name) => (String(name).toLowerCase() === 'payment-required' ? 'e2x402' : null) }
+      },
+      { error: { message: 'Payment required' } }
+    );
+    expect(e.statusCode).toBe(402);
+    expect(e.code).toBe('PAYMENT_REQUIRED');
+    expect(e.isPaymentRequired).toBe(true);
+    expect(e.paymentRequired).toBe('e2x402');
+  });
+
   it('constructors are distinct', () => {
     expect(new ValidationError('v')).toBeInstanceOf(ValidationError);
     expect(new NetworkError('n')).toBeInstanceOf(NetworkError);

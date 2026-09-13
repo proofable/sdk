@@ -1,7 +1,7 @@
 {
   "name": "@proofable/sdk",
-  "version": "0.1.0",
-  "description": "JavaScript SDK and CLI for AI agent permissions, identity verification, and reusable proof.",
+  "version": "0.1.1",
+  "description": "JavaScript SDK and CLI for verification, authorization, and reusable proof.",
   "bin": {
     "proofable": "cli/proofable.mjs"
   },

@@ -182,7 +182,7 @@ export function buildGenericMcpJsonConfig(accessKey, options = {}) {
         }
       },
       null,
-      2,
+      2
     );
   }
   const key = normalizeAccessKey(accessKey);
@@ -190,7 +190,7 @@ export function buildGenericMcpJsonConfig(accessKey, options = {}) {
   return JSON.stringify(
     { mcpServers: { [PROOFABLE_MCP_SERVER_NAME]: buildMcpHttpConfig(key) } },
     null,
-    2,
+    2
   );
 }
 
@@ -199,7 +199,7 @@ export function buildGenericMcpJsonConfigUrlOnly() {
   return JSON.stringify(
     { mcpServers: { [PROOFABLE_MCP_SERVER_NAME]: { type: 'http', url: PROOFABLE_MCP_URL } } },
     null,
-    2,
+    2
   );
 }
 

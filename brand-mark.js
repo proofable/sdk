@@ -14,8 +14,14 @@ export function brandPackUrl(file) {
   return `${PACK_BASE}/${name}`;
 }
 
-/** Canonical explicit-circle particle-ring vector. */
+/** Canonical 1:1 Proofable mark raster. Transparent Arctic on a square artboard. */
 export const PROOFABLE_DEFAULT_MARK_URL = brandPackUrl('web/proofable-mark-512.png');
+
+/** 1:1 company / org tile. Transparent mark at ~80% occupancy. */
+export const PROOFABLE_COMPANY_LOGO_URL = brandPackUrl('social/proofable-company-logo.png');
+
+/** Graphite company / org tile when a host flattens transparency onto white. */
+export const PROOFABLE_COMPANY_LOGO_DARK_URL = brandPackUrl('social/proofable-company-logo-dark.png');
 
 /** Sole art-directed default social and Open Graph card. */
 export const PROOFABLE_DEFAULT_OG_IMAGE_URL = brandPackUrl('social/proofable-social-card.png');

@@ -508,6 +508,93 @@ describe('ProofableClient', () => {
       const checkInit = fetch.mock.calls[1][1];
       expect(checkInit.headers['X-Sponsor-Grant']).toBe('grant-token');
     });
+
+    it('POSTs an inline Gate Policy and returns satisfied', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: {
+              eligible: true,
+              matchedQHashes: [`0x${'ab'.repeat(32)}`],
+              gate: {
+                gateId: null,
+                policyHash: `0x${'cd'.repeat(32)}`,
+                allRequiredSatisfied: true,
+                missingVerifierIds: [],
+                reusedVerifierProofs: { 'proof-of-human': `0x${'ab'.repeat(32)}` }
+              }
+            }
+          })
+      });
+
+      const out = await client.gateCheck({
+        gate: [{ verifierId: 'proof-of-human' }],
+        subject: { accountId: EVM_A }
+      });
+
+      expect(out.success).toBe(true);
+      expect(out.satisfied).toBe(true);
+      expect(out.subject.toLowerCase()).toBe(EVM_A.toLowerCase());
+      expect(out.requirements).toEqual([
+        { verifierId: 'proof-of-human', optional: false, minCount: 1 }
+      ]);
+      expect(out.missing).toEqual([]);
+      expect(out.proofs).toEqual([`0x${'ab'.repeat(32)}`]);
+      expect(out.data.gate.allRequiredSatisfied).toBe(true);
+      expect(fetch.mock.calls[0][1].method || 'POST').toBeTruthy();
+      const calledUrl = fetch.mock.calls[0][0];
+      expect(calledUrl).toContain('/api/v1/proofs/check');
+      expect(calledUrl).not.toContain('?');
+      const body = JSON.parse(fetch.mock.calls[0][1].body);
+      expect(body.requirements[0].verifierId).toBe('proof-of-human');
+      expect(body.subject.accountId.toLowerCase()).toBe(EVM_A.toLowerCase());
+    });
+
+    it('keeps every matched proof while exposing one compatibility qHash per verifier', async () => {
+      const firstQHash = `0x${'ab'.repeat(32)}`;
+      const secondQHash = `0x${'cd'.repeat(32)}`;
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          data: {
+            eligible: true,
+            matchedQHashes: [firstQHash, secondQHash],
+            gate: {
+              allRequiredSatisfied: true,
+              missingVerifierIds: [],
+              reusedVerifierProofs: {
+                'ownership-social': [firstQHash, secondQHash]
+              }
+            }
+          }
+        })
+      });
+
+      const out = await client.gateCheck({
+        gate: [{ verifierId: 'ownership-social', minCount: 2 }],
+        subject: { accountId: EVM_A }
+      });
+
+      expect(out.proofs).toEqual([firstQHash, secondQHash]);
+      expect(out.existing['ownership-social'].qHash).toBe(firstQHash);
+      expect(out.data.gate.reusedVerifierProofs['ownership-social']).toEqual([
+        firstQHash,
+        secondQHash
+      ]);
+    });
+
+    it('rejects gate together with gateId', async () => {
+      await expect(
+        client.gateCheck({
+          gate: [{ verifierId: 'proof-of-human' }],
+          gateId: 'gate_abc',
+          address: EVM_A
+        })
+      ).rejects.toThrow(ValidationError);
+    });
   });
 
   describe('checkGate()', () => {

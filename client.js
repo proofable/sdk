@@ -8,6 +8,11 @@ import {
   signMessage,
   PROOFABLE_CONSTANTS
 } from './utils.js';
+import {
+  hashGatePolicy,
+  resolveGateSubjectAccountId,
+  sanitizeGateRequirements
+} from './gates.js';
 
 const FALLBACK_PUBLIC_VERIFIER_CATALOG = {
   'ownership-basic': { supportsDirectApi: true },
@@ -38,6 +43,43 @@ function normalizeWalletLinkRelationshipType(value) {
  * @param {unknown} raw
  * @returns {string | null} Non-empty trimmed string, or null if the provider value is not a valid string identity.
  */
+function normalizeGateCheckResult(response, { gate = null, subject = '', gateId = null } = {}) {
+  const data = response?.data && typeof response.data === 'object' ? response.data : {};
+  const gateBlock = data.gate && typeof data.gate === 'object' ? data.gate : null;
+  const satisfied = gateBlock
+    ? gateBlock.allRequiredSatisfied === true
+    : data.eligible === true;
+  const missing = Array.isArray(gateBlock?.missingVerifierIds)
+    ? gateBlock.missingVerifierIds
+    : [];
+  const reused = gateBlock?.reusedVerifierProofs && typeof gateBlock.reusedVerifierProofs === 'object'
+    ? gateBlock.reusedVerifierProofs
+    : {};
+  const existing = {};
+  for (const [verifierId, qHashValue] of Object.entries(reused)) {
+    const qHash = Array.isArray(qHashValue) ? qHashValue[0] : qHashValue;
+    if (typeof qHash !== 'string' || !qHash.trim()) continue;
+    existing[verifierId] = {
+      qHash,
+      walletAddress: subject,
+      verifiedVerifiers: [{ verifierId, verified: true }]
+    };
+  }
+  const proofs = Array.isArray(data.matchedQHashes) ? data.matchedQHashes : [];
+  return {
+    ...response,
+    satisfied,
+    policyHash: gateBlock?.policyHash || (gate ? hashGatePolicy(gate) : null),
+    gateId: gateId || gateBlock?.gateId || null,
+    subject,
+    requirements: gate || null,
+    missing,
+    proofs,
+    existing,
+    expiresAt: gateBlock?.expiresAt || data.expiresAt || null
+  };
+}
+
 function normalizeBrowserSignerString(raw) {
   if (raw === null || raw === undefined) {
     return null;
@@ -1630,13 +1672,20 @@ export class ProofableClient {
   }
 
   async gateCheck(params = {}) {
-    const address = (params.address || '').toString();
+    const address = resolveGateSubjectAccountId(params.subject || params.address);
     if (!validateUniversalAddress(address, params.chain)) {
       throw new ValidationError('Valid address is required');
     }
 
     const gateIdParam = typeof params.gateId === 'string' ? params.gateId.trim() : '';
-    const verifierIds = gateIdParam ? undefined : params.verifierIds;
+    const inlineGate = Array.isArray(params.gate) ? sanitizeGateRequirements(params.gate) : null;
+    if (inlineGate && gateIdParam) {
+      throw new ValidationError('gate and gateId are mutually exclusive');
+    }
+    if (Array.isArray(params.gate) && (!inlineGate || inlineGate.length === 0)) {
+      throw new ValidationError('gate must include at least one requirement');
+    }
+    const verifierIds = gateIdParam || inlineGate ? undefined : params.verifierIds;
 
     const qs = new URLSearchParams();
     qs.set('address', address);
@@ -1737,11 +1786,10 @@ export class ProofableClient {
     let mergedHeaders = headersOverride;
     if (!mergedHeaders && !gateIdParam) {
       try {
-        const sponsorHeaders = await this._resolveSponsorGrantHeaders(
-          Array.isArray(verifierIds)
-            ? verifierIds
-            : (verifierIds ? [verifierIds] : [])
-        );
+        const sponsorIds = inlineGate
+          ? inlineGate.map((row) => row.verifierId)
+          : (Array.isArray(verifierIds) ? verifierIds : (verifierIds ? [verifierIds] : []));
+        const sponsorHeaders = await this._resolveSponsorGrantHeaders(sponsorIds);
         if (sponsorHeaders && Object.keys(sponsorHeaders).length > 0) {
           mergedHeaders = sponsorHeaders;
         }
@@ -1750,11 +1798,25 @@ export class ProofableClient {
       }
     }
 
-    const response = await this._makeRequest('GET', `/api/v1/proofs/check?${qs.toString()}`, null, mergedHeaders);
+    let response;
+    if (inlineGate) {
+      response = await this._makeRequest('POST', '/api/v1/proofs/check', {
+        subject: { accountId: address },
+        requirements: inlineGate,
+        ...(params.includeQHashes !== undefined ? { includeQHashes: Boolean(params.includeQHashes) } : {}),
+        ...(params.includePrivate === true ? { includePrivate: true } : {})
+      }, mergedHeaders);
+    } else {
+      response = await this._makeRequest('GET', `/api/v1/proofs/check?${qs.toString()}`, null, mergedHeaders);
+    }
     if (!response.success) {
       throw new ApiError(`Gate check failed: ${response.error?.message || 'Unknown error'}`, response.error);
     }
-    return response;
+    return normalizeGateCheckResult(response, {
+      gate: inlineGate,
+      subject: address,
+      gateId: gateIdParam || null
+    });
   }
 
   /**

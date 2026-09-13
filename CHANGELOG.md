@@ -6,13 +6,26 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-13
+
 ### Added
 
-- **Generic MCP config builder.** `buildGenericMcpJsonConfig` and `buildGenericMcpJsonConfigUrlOnly` from `@proofable/sdk/mcp-hosts` produce the copy-paste `mcpServers` JSON block for any MCP client (ChatGPT, Claude Desktop, headless agents, gateways). URL-only output is the OAuth path; an `npk_*` Profile access key becomes a static `Authorization: Bearer` header. `{ envVar: true }` prints `Bearer ${PROOFABLE_ACCESS_KEY}` so published blocks never contain a real key.
+- **Inline Gate Policy.** `defineGate` plus `gateCheck({ gate, subject })` evaluates a visitor by account without a published listing or Proofable profile. `POST /api/v1/proofs/check` is the server path.
+- **Subject reuse.** `VerifyGate` accepts `subject` and reuses public or unlisted proofs for that account without requiring a connected wallet or Proofable sign-in.
+- **x402 quotes on API errors.** `ApiError.fromResponse` keeps `PAYMENT-REQUIRED` on HTTP 402 so callers can settle and retry with `PAYMENT-SIGNATURE`.
+- **Generic MCP config builder.** `buildGenericMcpJsonConfig` and `buildGenericMcpJsonConfigUrlOnly` from `@proofable/sdk/mcp-hosts` produce the copy-paste `mcpServers` JSON block for any MCP client. URL-only output is the OAuth path; an `npk_*` Profile access key becomes a static `Authorization: Bearer` header.
 
 ### Changed
 
-- **Install host constant.** `MCP_INSTALL_HOSTS` is now `MCP_INSTALL_SHORTCUT_HOSTS`. The four entries (cursor, claude, codex, vscode) are deep-link conveniences, not the compatibility boundary; any MCP client connects through the canonical endpoint.
+- **Install host constant.** `MCP_INSTALL_HOSTS` is now `MCP_INSTALL_SHORTCUT_HOSTS`. The four entries (cursor, claude, codex, vscode) are deep-link conveniences, not the compatibility boundary.
+
+### Upgrade
+
+```bash
+npm install @proofable/sdk@0.1.1
+```
+
+`gateCheck({ gateId })` still works for published listings. New apps should use `defineGate` and `subject`.
 
 ## [0.1.0] - 2026-09-06
 

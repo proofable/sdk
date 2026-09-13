@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/@proofable/sdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-JavaScript SDK and CLI for AI agent permissions, identity verification, and reusable proof. Check what a user or agent may do before access, payment, or action, and reuse the proof instead of repeating the check.
+JavaScript SDK and CLI for verification, authorization, and reusable proof. Check what a person, organization, or agent may do before access, payment, or action, and reuse the proof instead of repeating the check.
 
 Requires Node.js 20 or later.
 
@@ -13,36 +13,45 @@ Requires Node.js 20 or later.
 npm install @proofable/sdk
 ```
 
-## Check access on your server
+## Gate anything by what can be proven
 
-Use `gateCheck` from trusted server code before access:
+Define the policy in your product. The user verifies there. Proofable returns whether it is satisfied. You decide what happens next.
 
 ```js
-import { ProofableClient } from '@proofable/sdk';
+import { ProofableClient, defineGate } from '@proofable/sdk';
 
-const client = new ProofableClient();
+const proofable = new ProofableClient();
+const gate = defineGate([{ verifierId: 'proof-of-human' }]);
 
-const result = await client.gateCheck({
-  gateId: 'gate_your-app-name',
-  address: '0x...'
+const result = await proofable.gateCheck({
+  gate,
+  subject: { accountId: user.accountAddress },
 });
-
-if (result.data?.gate?.allRequiredSatisfied !== true) {
-  throw new Error('Access denied');
+if (result.satisfied) {
+  // Authorize the action on your server.
 }
 ```
 
-Never ship access keys in browser code.
+```jsx
+import { defineGate } from '@proofable/sdk';
+import { VerifyGate } from '@proofable/sdk/widgets';
+
+const gate = defineGate([{ verifierId: 'proof-of-human' }]);
+
+<VerifyGate gate={gate} onVerified={grantAccess} />;
+```
+
+A published `gateId` is optional when you want a persisted listing, price, or schedule. Never ship access keys in browser code.
 
 ## Send users to Hosted Verify
 
-Hosted Verify handles signing outside your app. Prefer a published gate:
+Hosted Verify handles a missing interactive check outside your app. A published listing is optional:
 
 ```js
 import { getHostedCheckoutUrl } from '@proofable/sdk';
 
 const url = getHostedCheckoutUrl({
-  gateId: 'gate_your-app-name',
+  verifiers: ['proof-of-human'],
   returnUrl: 'https://app.example.com/auth/callback'
 });
 

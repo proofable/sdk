@@ -962,7 +962,10 @@ function parseArgs(argv) {
     oauth: false,
     agent: '',
     apply: '',
-    agentTarget: ''
+    agentTarget: '',
+    gateCommand: '',
+    subject: '',
+    gateTarget: ''
   };
 
   for (let index = 1; index < argv.length; index += 1) {
@@ -1019,6 +1022,23 @@ function parseArgs(argv) {
       options.agentTarget = token;
       continue;
     }
+    if (token === '--subject') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--subject requires a value');
+      options.subject = value.trim();
+      index += 1;
+      continue;
+    }
+    if (command === 'gate' && !token.startsWith('-')) {
+      if (!options.gateCommand) {
+        options.gateCommand = token.trim().toLowerCase();
+        continue;
+      }
+      if (!options.gateTarget) {
+        options.gateTarget = token;
+        continue;
+      }
+    }
     if (token === '--help' || token === '-h') {
       return { command: 'help', options };
     }
@@ -1045,6 +1065,8 @@ function printUsage(exitCode = 0) {
     '  examples      Show assistant prompts to try after install',
     '  doctor        Deep check: config status, profile connection, and live MCP context',
     '  mount <id>    Connect a Trusted Agent to a project or runtime',
+    '  gate check <file> --subject <id>   Check a Gate Policy file against a subject',
+    '  gate get <gateId>                  Read a published gate snapshot',
     '  help          Show this message',
     '',
     'Options:',
@@ -2737,6 +2759,58 @@ async function runDisconnect(options) {
   }
 }
 
+async function runGate(options) {
+  const sub = String(options.gateCommand || '').trim().toLowerCase();
+  if (sub !== 'check' && sub !== 'get') {
+    throw new Error('Usage: proofable gate check <file> --subject <id> | proofable gate get <gateId>');
+  }
+  const { ProofableClient } = await import('../client.js');
+  const { defineGate } = await import('../gates.js');
+  const client = new ProofableClient({
+    apiKey: options.accessKey || envAccessKey() || undefined
+  });
+
+  if (sub === 'get') {
+    const gateId = String(options.gateTarget || '').trim();
+    if (!gateId) throw new Error('Usage: proofable gate get <gateId>');
+    const gate = await client.getGate(gateId);
+    if (options.json) {
+      printJson({ command: 'gate', action: 'get', gate });
+      return;
+    }
+    writeCliLine(paint('gate get', 'green'));
+    writeCliLine(JSON.stringify(gate, null, 2));
+    return;
+  }
+
+  const filePath = String(options.gateTarget || '').trim();
+  const subject = String(options.subject || '').trim();
+  if (!filePath || !subject) {
+    throw new Error('Usage: proofable gate check <file> --subject <id>');
+  }
+  const raw = JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf8'));
+  const requirements = Array.isArray(raw)
+    ? raw
+    : (Array.isArray(raw?.requirements) ? raw.requirements : (Array.isArray(raw?.gate) ? raw.gate : null));
+  if (!requirements) {
+    throw new Error('Gate file must be a requirements array or { requirements }');
+  }
+  const gate = defineGate(requirements);
+  const result = await client.gateCheck({ gate, subject: { accountId: subject } });
+  if (options.json) {
+    printJson({
+      command: 'gate',
+      action: 'check',
+      satisfied: result.satisfied === true,
+      policyHash: result.policyHash || null,
+      subject: result.subject || subject
+    });
+    return;
+  }
+  writeCliLine(paint(result.satisfied === true ? 'satisfied' : 'not satisfied', result.satisfied ? 'green' : 'yellow'));
+  if (result.policyHash) writeCliLine(result.policyHash);
+}
+
 async function main() {
   try {
     const { command, options } = parseArgs(process.argv.slice(2));
@@ -2793,6 +2867,10 @@ async function main() {
     }
     if (command === 'disconnect') {
       await runDisconnect(options);
+      return;
+    }
+    if (command === 'gate') {
+      await runGate(options);
       return;
     }
 

@@ -172,7 +172,39 @@ function ProofableLogo({ size = 16 }) {
   );
 }
 
+function adaptServerGateCheck(apiResult, address) {
+  const data = apiResult?.data || {};
+  const gateBlock = data.gate || {};
+  const reused = gateBlock.reusedVerifierProofs && typeof gateBlock.reusedVerifierProofs === 'object'
+    ? gateBlock.reusedVerifierProofs
+    : {};
+  const existing = apiResult?.existing && typeof apiResult.existing === 'object'
+    ? { ...apiResult.existing }
+    : {};
+  for (const [verifierId, qHash] of Object.entries(reused)) {
+    if (existing[verifierId]) continue;
+    existing[verifierId] = {
+      qHash,
+      walletAddress: address,
+      verifiedVerifiers: [{ verifierId, verified: true }]
+    };
+  }
+  const missingIds = Array.isArray(apiResult?.missing)
+    ? apiResult.missing
+    : (Array.isArray(gateBlock.missingVerifierIds) ? gateBlock.missingVerifierIds : []);
+  return {
+    satisfied: apiResult?.satisfied === true || gateBlock.allRequiredSatisfied === true,
+    missing: missingIds.map((verifierId) => (
+      typeof verifierId === 'string' ? { verifierId } : verifierId
+    )),
+    existing,
+    allProofs: []
+  };
+}
+
 export function VerifyGate({
+  gate = undefined,
+  subject = undefined,
   gateId = undefined,
   requiredVerifiers = ['ownership-basic'],
   onVerified = undefined,
@@ -210,6 +242,8 @@ export function VerifyGate({
   const [operation, setOperation] = useState('verify');
 
   const resolvedGateId = typeof gateId === 'string' ? gateId.trim() : '';
+  const resolvedPolicy = Array.isArray(gate) && gate.length > 0 ? gate : null;
+  const policyConflict = Boolean(resolvedPolicy && resolvedGateId);
 
   const client = useMemo(
     () => new ProofableClient({ apiUrl, appId: resolvedGateId ? undefined : appId, billingWallet: resolvedGateId ? undefined : billingWallet, paymentSignature, extraHeaders }),
@@ -218,10 +252,16 @@ export function VerifyGate({
 
   const verifierList = useMemo(() => {
     if (resolvedGateId) return [];
+    if (resolvedPolicy) {
+      return resolvedPolicy
+        .map((row) => (typeof row === 'string' ? row : row?.verifierId))
+        .map((id) => String(id || '').trim())
+        .filter(Boolean);
+    }
     return Array.isArray(requiredVerifiers) && requiredVerifiers.length > 0
       ? requiredVerifiers
       : ['ownership-basic'];
-  }, [requiredVerifiers, resolvedGateId]);
+  }, [requiredVerifiers, resolvedGateId, resolvedPolicy]);
 
   const primaryVerifier = verifierList[0];
   const qHash = qHashProp || null;
@@ -240,6 +280,8 @@ export function VerifyGate({
     return DEFAULT_HOSTED_CHECKOUT_URL;
   }, [apiUrl, hostedCheckoutUrl]);
 
+  // Published listings keep hosted checkout so paid fulfill still runs.
+  // Inline Gate Policy reuses public/unlisted proofs for the subject without sign-in.
   const shouldCheckExisting = !resolvedGateId && checkExisting && strategy !== 'fresh';
 
   const inferChainFromAddress = useCallback((address) => {
@@ -251,8 +293,17 @@ export function VerifyGate({
   }, [chain]);
 
   const buildGateRequirements = useCallback(() => {
+    if (resolvedPolicy) return resolvedPolicy;
     return verifierList.map(verifierId => ({ verifierId }));
-  }, [verifierList]);
+  }, [resolvedPolicy, verifierList]);
+
+  const resolveCheckAddress = useCallback((fallback) => {
+    if (subject && typeof subject === 'object') {
+      return String(subject.accountId || subject.address || fallback || '').trim();
+    }
+    if (typeof subject === 'string' && subject.trim()) return subject.trim();
+    return String(fallback || '').trim();
+  }, [subject]);
 
   const applySatisfiedGateResult = useCallback((gateResult, address) => {
     if (!gateResult?.satisfied) return false;
@@ -335,6 +386,22 @@ export function VerifyGate({
       })
       : null;
 
+    if (resolvedPolicy) {
+      const apiResult = await client.gateCheck({
+        gate: resolvedPolicy,
+        subject: { accountId: address },
+        address,
+        includePrivate: true,
+        includeQHashes: true,
+        ...(privateAuth ? { privateAuth } : { wallet: provider }),
+        ...(resolvedChain ? { chain: resolvedChain } : {}),
+        ...(resolvedSignatureMethod ? { signatureMethod: resolvedSignatureMethod } : {})
+      });
+      const adapted = adaptServerGateCheck(apiResult, address);
+      setExistingProofs(adapted);
+      return adapted;
+    }
+
     const gateResults = await Promise.all(
       requirements.map(async (requirement) => {
         const verifierId = requirement?.verifierId;
@@ -396,7 +463,7 @@ export function VerifyGate({
 
     setExistingProofs(adaptedGateResult);
     return adaptedGateResult;
-  }, [client, buildGateRequirements, wallet, inferChainFromAddress, signatureMethod]);
+  }, [client, buildGateRequirements, wallet, inferChainFromAddress, signatureMethod, resolvedPolicy]);
 
   const launchHostedCheckout = useCallback(async () => {
     if (typeof window === 'undefined') {
@@ -493,25 +560,44 @@ export function VerifyGate({
   }, [state, onStateChange]);
 
   useEffect(() => {
+    if (!policyConflict) return;
+    setError('Use gate or gateId, not both.');
+    setState('error');
+  }, [policyConflict]);
+
+  useEffect(() => {
     if (!shouldCheckExisting || mode === 'access') return;
 
     const checkExistingProofs = async () => {
       try {
-        const provider =
-          wallet ||
-          (typeof window !== 'undefined' ? window.ethereum : null);
-        if (!provider || typeof provider.request !== 'function') return;
+        let address = resolveCheckAddress('');
+        if (!address) {
+          const provider =
+            wallet ||
+            (typeof window !== 'undefined' ? window.ethereum : null);
+          if (!provider || typeof provider.request !== 'function') return;
 
-        const accounts = await provider.request({ method: 'eth_accounts' });
-        if (!accounts || accounts.length === 0) return;
-
-        const address = accounts[0];
+          const accounts = await provider.request({ method: 'eth_accounts' });
+          if (!accounts || accounts.length === 0) return;
+          address = resolveCheckAddress(accounts[0]);
+        }
         setWalletAddress(address);
 
-        const gateResult = await client.checkGate({
-          walletAddress: address,
-          requirements: buildGateRequirements()
-        });
+        let gateResult;
+        if (resolvedPolicy) {
+          const apiResult = await client.gateCheck({
+            gate: resolvedPolicy,
+            subject: { accountId: address },
+            address,
+            includeQHashes: true
+          });
+          gateResult = adaptServerGateCheck(apiResult, address);
+        } else {
+          gateResult = await client.checkGate({
+            walletAddress: address,
+            requirements: buildGateRequirements()
+          });
+        }
 
         setExistingProofs(gateResult);
         applySatisfiedGateResult(gateResult, address);
@@ -556,7 +642,7 @@ export function VerifyGate({
       provider.on('accountsChanged', handleAccountsChanged);
       return () => provider.removeListener('accountsChanged', handleAccountsChanged);
     }
-  }, [shouldCheckExisting, mode, client, buildGateRequirements, applySatisfiedGateResult, state, wallet, walletAddress, onError]);
+  }, [shouldCheckExisting, mode, client, buildGateRequirements, applySatisfiedGateResult, state, wallet, walletAddress, onError, resolvedPolicy, resolveCheckAddress, subject]);
 
   const handleClick = useCallback(async () => {
     if (disabled || isProcessing) return;
@@ -568,14 +654,27 @@ export function VerifyGate({
     setError(null);
     setNotice(null);
 
-    if (shouldCheckExisting && walletAddress) {
+    const knownAddress = resolveCheckAddress(walletAddress);
+    if (shouldCheckExisting && knownAddress) {
       try {
-        const gateResult = await client.checkGate({
-          walletAddress,
-          requirements: buildGateRequirements()
-        });
+        const address = knownAddress;
+        let gateResult;
+        if (resolvedPolicy) {
+          const apiResult = await client.gateCheck({
+            gate: resolvedPolicy,
+            subject: { accountId: address },
+            address,
+            includeQHashes: true
+          });
+          gateResult = adaptServerGateCheck(apiResult, address);
+        } else {
+          gateResult = await client.checkGate({
+            walletAddress: address,
+            requirements: buildGateRequirements()
+          });
+        }
 
-        if (applySatisfiedGateResult(gateResult, walletAddress)) return;
+        if (applySatisfiedGateResult(gateResult, address)) return;
       } catch (err) {
         // Only block on infrastructure failures; a missing proof is the normal
         // "needs verify" path and falls through to the main flow.
@@ -701,7 +800,9 @@ export function VerifyGate({
     getOrRequestWalletAddress,
     tryPrivateReuse,
     state,
-    wallet
+    wallet,
+    resolvedPolicy,
+    resolveCheckAddress
   ]);
 
   const handleReuseExisting = useCallback(async () => {

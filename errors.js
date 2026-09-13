@@ -1,3 +1,13 @@
+function readResponseHeader(response, name) {
+  const headers = response?.headers;
+  if (!headers) return null;
+  if (typeof headers.get === 'function') {
+    return headers.get(name) || headers.get(name.toLowerCase()) || null;
+  }
+  const direct = headers[name] || headers[name.toLowerCase()];
+  return typeof direct === 'string' && direct.trim() ? direct : null;
+}
+
 export class SDKError extends Error {
   constructor(message, code = 'SDK_ERROR', details = {}) {
     super(message);
@@ -39,9 +49,19 @@ export class ApiError extends SDKError {
     const message = responseData?.error?.message ||
                    responseData?.message ||
                    `API request failed with status ${statusCode}`;
-    const code = responseData?.error?.code || 'API_ERROR';
+    const code = statusCode === 402
+      ? (responseData?.error?.code || 'PAYMENT_REQUIRED')
+      : (responseData?.error?.code || 'API_ERROR');
 
-    return new ApiError(message, statusCode, code, responseData);
+    const error = new ApiError(message, statusCode, code, responseData);
+    const paymentRequired = readResponseHeader(response, 'PAYMENT-REQUIRED');
+    if (paymentRequired) {
+      error.paymentRequired = paymentRequired;
+    }
+    if (statusCode === 402) {
+      error.isPaymentRequired = true;
+    }
+    return error;
   }
 
   toJSON() {

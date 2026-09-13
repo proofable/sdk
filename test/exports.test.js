@@ -6,6 +6,8 @@ describe('package exports', () => {
     expect(Index.ProofableClient).toBeTypeOf('function');
     expect(Index.ValidationError).toBeTypeOf('function');
     expect(Index.createGate).toBeTypeOf('function');
+    expect(Index.defineGate).toBeTypeOf('function');
+    expect(Index.hashGatePolicy).toBeTypeOf('function');
     expect(Index.getHostedCheckoutUrl).toBeTypeOf('function');
     expect(Index.getHostedAgentCreateUrl).toBeTypeOf('function');
     expect(Index.computePortableProofQHash).toBeTypeOf('function');

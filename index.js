@@ -56,6 +56,10 @@ export {
   GATE_WALLET_RISK,
   GATE_PSEUDONYM,
   createGate,
+  defineGate,
+  sanitizeGateRequirements,
+  hashGatePolicy,
+  resolveGateSubjectAccountId,
   combineGates
 } from './gates.js';
 
