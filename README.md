@@ -77,7 +77,7 @@ After completion, Proofable redirects back with a proof ID in the `qHash` field.
 
 ## Connect an editor or agent host
 
-Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a Profile access key as a Bearer token from `PROOFABLE_ACCESS_KEY`.
+Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a server key as a Bearer token from `PROOFABLE_ACCESS_KEY`.
 
 ```bash
 npx -y @proofable/sdk setup
