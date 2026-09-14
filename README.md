@@ -1,4 +1,4 @@
-# Proofable
+# Proofable SDK
 
 Add verification gates, reusable proof, and agent permissions to your app.
 
