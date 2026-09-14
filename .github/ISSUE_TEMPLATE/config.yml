@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://docs.proofable.me
+    about: How to use the SDK, CLI, and hosted API
+  - name: Discussions
+    url: https://github.com/proofable/sdk/discussions
+    about: Questions and ideas
+  - name: Security
+    url: https://github.com/proofable/sdk/blob/main/SECURITY.md
+    about: Report a vulnerability privately

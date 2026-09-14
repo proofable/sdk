@@ -1,7 +1,7 @@
 {
   "name": "@proofable/sdk",
   "version": "0.1.1",
-  "description": "JavaScript SDK and CLI for verification, authorization, and reusable proof.",
+  "description": "SDK and CLI for verification gates, reusable proof, and agent permissions.",
   "bin": {
     "proofable": "cli/proofable.mjs"
   },
@@ -53,13 +53,11 @@
     },
     "./widgets": {
       "types": "./types.d.ts",
-      "import": "./widgets/index.js",
-      "require": "./widgets.cjs"
+      "import": "./widgets/index.js"
     },
     "./widgets/verify-gate": {
       "types": "./types.d.ts",
-      "import": "./widgets/verify-gate/index.js",
-      "require": "./widgets.cjs"
+      "import": "./widgets/verify-gate/index.js"
     }
   },
   "sideEffects": false,
@@ -87,6 +85,7 @@
     "identity-verification",
     "proof-of-human",
     "reusable-proof",
+    "verification-gates",
     "portable-proof",
     "caip-380",
     "mcp",
@@ -125,7 +124,7 @@
   "overrides": {
     "ws": "8.21.0",
     "vite": "8.0.16",
-    "js-yaml": "4.3.1",
+    "js-yaml": "4.3.2",
     "brace-expansion": "5.0.9",
     "launch-editor": "2.14.1",
     "postcss": ">=8.5.23"
@@ -137,12 +136,12 @@
     "js-sha3": "^0.9.3"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.1.3",
+    "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.28.1",
     "eslint": "^8.56.0",
     "eslint-plugin-react": "^7.37.2",
     "prettier": "^3.2.0",
-    "vitest": "^4.1.3"
+    "vitest": "^4.1.11"
   },
   "files": [
     "cli/proofable.mjs",
@@ -159,7 +158,6 @@
     "runtime-mount.js",
     "runtime-adapters.js",
     "cjs/**",
-    "widgets.cjs",
     "types.d.ts",
     "README.md",
     "SECURITY.md",

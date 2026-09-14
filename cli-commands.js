@@ -1,10 +1,9 @@
 /**
- * Proofable CLI command strings — SSOT for docs, MCP context, product UI, and skills.
+ * Published CLI command strings used by docs, MCP setup, and skills.
  *
- * Golden path:
- * - Run the published CLI without relying on a global shim.
- * - `setup` owns MCP registration for every supported host.
- * - `doctor --live` is the only health-check command.
+ * - Run the published CLI without a global shim.
+ * - `setup` registers MCP for every supported host.
+ * - `doctor --live` is the health-check command.
  */
 
 export const PROOFABLE_PKG = '@proofable/sdk';

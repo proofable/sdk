@@ -1,21 +1,27 @@
-# Proofable SDK
+# Proofable
 
-[![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/@proofable/sdk)
+Add verification gates, reusable proof, and agent permissions to your app.
+
+[![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/%40proofable%2Fsdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-JavaScript SDK and CLI for verification, authorization, and reusable proof. Check what a person, organization, or agent may do before access, payment, or action, and reuse the proof instead of repeating the check.
+## Start here
 
-Requires Node.js 20 or later.
+```bash
+npx -y @proofable/sdk setup
+```
 
-## Install
+**Any MCP client**
+
+`https://mcp.proofable.me/mcp`
+
+**Install**
 
 ```bash
 npm install @proofable/sdk
 ```
 
-## Gate anything by what can be proven
-
-Define the policy in your product. The user verifies there. Proofable returns whether it is satisfied. You decide what happens next.
+**Build**
 
 ```js
 import { ProofableClient, defineGate } from '@proofable/sdk';
@@ -27,10 +33,21 @@ const result = await proofable.gateCheck({
   gate,
   subject: { accountId: user.accountAddress },
 });
+
 if (result.satisfied) {
-  // Authorize the action on your server.
+  // Allow the action.
 }
 ```
+
+**Docs**
+
+https://docs.proofable.me
+
+[SDK](https://docs.proofable.me/sdks/javascript) | [CLI](https://docs.proofable.me/sdks/cli) | [MCP](https://mcp.proofable.me/mcp) | [API](https://docs.proofable.me/api/overview) | [Examples](https://docs.proofable.me/use-cases/gate-access) | [Docs](https://docs.proofable.me)
+
+Requires Node.js 20 or later.
+
+## Gate a React page
 
 ```jsx
 import { defineGate } from '@proofable/sdk';
@@ -43,9 +60,7 @@ const gate = defineGate([{ verifierId: 'proof-of-human' }]);
 
 A published `gateId` is optional when you want a persisted listing, price, or schedule. Never ship access keys in browser code.
 
-## Send users to Hosted Verify
-
-Hosted Verify handles a missing interactive check outside your app. A published listing is optional:
+## Send someone to Hosted Verify
 
 ```js
 import { getHostedCheckoutUrl } from '@proofable/sdk';
@@ -60,44 +75,9 @@ window.location.assign(url);
 
 After completion, Proofable redirects back with a proof ID in the `qHash` field. Store it with your user or record.
 
-To set up a dedicated agent, keep its signed identity step separate from the approving account:
+## Connect an editor or agent host
 
-```js
-import { getHostedAgentCreateUrl } from '@proofable/sdk';
-
-const url = getHostedAgentCreateUrl({
-  agentId: 'data-analyst',
-  agentWallet,
-  controllerWallet,
-  identityQHash,
-  returnUrl: 'https://app.example.com/agents/callback'
-});
-```
-
-When `identityQHash` is present, Hosted Verify requests only `agent-delegation`.
-
-## Gate a React page
-
-```jsx
-import { VerifyGate } from '@proofable/sdk/widgets';
-
-export function Page() {
-  return (
-    <VerifyGate
-      gateId="gate_your-app-name"
-      onVerified={result => {
-        console.log(result.qHash || result.qHashes);
-      }}
-    >
-      <section>Unlocked content</section>
-    </VerifyGate>
-  );
-}
-```
-
-## Connect AI clients and agents
-
-Any MCP client connects to `https://mcp.proofable.me/mcp`. Interactive clients click **Connect** and sign in with OAuth; servers and CI use a Profile access key as a Bearer token from `PROOFABLE_ACCESS_KEY`. The CLI writes the same entry for supported clients and loads agent context into a project:
+Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a Profile access key as a Bearer token from `PROOFABLE_ACCESS_KEY`.
 
 ```bash
 npx -y @proofable/sdk setup
@@ -106,41 +86,7 @@ npx -y @proofable/sdk mount <agentId> --apply <host>
 npx -y @proofable/sdk doctor --live
 ```
 
-`--apply` accepts `cursor`, `claude`, or `codex`. See [MCP setup](https://docs.proofable.me/mcp/setup) and [Connect agent context](https://docs.proofable.me/agents/runtime-mount).
-
-## Sign in your app
-
-Use this only when your app handles signing itself. This example is EVM. For non-EVM accounts, pass the provider explicitly and include `chain` as a CAIP-2 value.
-
-```js
-import { ProofableClient } from '@proofable/sdk';
-
-const client = new ProofableClient({
-  apiUrl: 'https://api.proofable.me'
-});
-
-const proof = await client.verify({
-  verifier: 'ownership-basic',
-  data: {
-    owner: '0x...',
-    contentType: 'application/json',
-    content: JSON.stringify({
-      title: 'Verified claim',
-      type: 'project-update',
-      summary: 'Public summary of what is being proven.'
-    }),
-    reference: {
-      type: 'url',
-      id: 'https://example.com/source',
-      title: 'Source record'
-    }
-  },
-  wallet: window.ethereum // EVM provider
-});
-
-console.log(proof.qHash);
-console.log(proof.proofUrl);
-```
+`--apply` accepts `cursor`, `claude`, or `codex`. Setup steps: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup).
 
 ## Core methods
 
@@ -165,30 +111,17 @@ console.log(proof.proofUrl);
 | `client.getVerifierCatalog()` | Full verifier catalog with access levels |
 | `client.isHealthy()` | Ping the API health endpoint |
 
-## Configuration
-
 ```js
+import { ProofableClient } from '@proofable/sdk';
+
 const client = new ProofableClient({
   apiUrl: 'https://api.proofable.me',
   timeout: 30000
 });
 ```
 
-`appId` is optional public attribution for advanced server flows. Published gate checkout and `gateCheck({ gateId })` do not require it. `apiKey` (`npk_*`) is optional and server-side only.
+`appId` is optional public attribution for advanced server flows. Published gate checkout and `gateCheck({ gateId })` do not require it. `apiKey` (`npk_*`) is server-side only.
 
-## Docs
+Issues: [github.com/proofable/sdk/issues](https://github.com/proofable/sdk/issues). Security: [SECURITY.md](./SECURITY.md). Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-- [Getting started](https://docs.proofable.me/)
-- [JavaScript SDK](https://docs.proofable.me/sdks/javascript)
-- [CLI](https://docs.proofable.me/sdks/cli)
-- [Widgets](https://docs.proofable.me/widgets/overview)
-- [HTTP API](https://docs.proofable.me/api/overview)
-
-Proofable implements [CAIP-380 Portable Proof](https://docs.proofable.me/learn/standards/caip-380), so a proof can be checked outside Proofable.
-
-## Support
-
-- Issues: [github.com/proofable/sdk/issues](https://github.com/proofable/sdk/issues)
-- Security: [SECURITY.md](./SECURITY.md)
-
-Apache-2.0. Proofable is published by NEUS Network, Inc.
+Apache-2.0. Published by NEUS Network, Inc.

@@ -40,7 +40,7 @@ export const claims = [
     uiCategory: 'Rewards',
     title: 'Fair airdrop',
     example: 'Send rewards to real people without exposing private identity data.',
-    whyItMatters: 'Route rewards to real people with a portable trust signal instead of a brittle “trust score” proxy.',
+    whyItMatters: 'Route rewards to real people with a portable trust signal rather than a home-grown score.',
     requires: 'Proof of human',
     unlocks: 'Reward eligibility + creator badge',
     cardRequires: 'Proof of human',
