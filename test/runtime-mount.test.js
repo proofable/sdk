@@ -11,7 +11,7 @@ import {
   evaluateMountFileHealth,
   evaluateRuntimeAction
 } from '../runtime-mount.js';
-import { applyRuntimeBundle, bundleToCursorRules, readMountManifest } from '../runtime-adapters.js';
+import { applyRuntimeBundle, bundleToCursorRules, readMountManifest, normalizeApplyHost } from '../runtime-adapters.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -252,6 +252,41 @@ describe('runtime-mount', () => {
     expect(bundleToCursorRules(bundle)).toContain('proofable_context');
     const manifest = readMountManifest(tmp);
     expect(manifest?.identity.agentId).toBe('demo-agent');
+  });
+
+  it('writes hermes and openclaw pointer sidecars without a second runtime schema', () => {
+    const bundle = buildRuntimeBundle({ identity, delegation });
+    const hermesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proofable-hermes-'));
+    const hermes = applyRuntimeBundle('hermes', bundle, hermesDir);
+    const pointer = JSON.parse(fs.readFileSync(hermes.primary, 'utf8'));
+    expect(pointer.schema).toBe('proofable.runtime-pointer.v1');
+    expect(pointer.origin).toBe('hermes');
+    expect(pointer.mount).toBe('.proofable/mount.json');
+    expect(fs.existsSync(path.join(hermesDir, '.proofable', 'mount.json'))).toBe(true);
+
+    const clawDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proofable-openclaw-'));
+    const claw = applyRuntimeBundle('openclaw', bundle, clawDir);
+    const clawPointer = JSON.parse(fs.readFileSync(claw.primary, 'utf8'));
+    expect(clawPointer.origin).toBe('openclaw');
+    expect(clawPointer.mount).toBe('.proofable/mount.json');
+
+    const openDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proofable-opencode-'));
+    const oc = applyRuntimeBundle('opencode', bundle, openDir);
+    const ocPointer = JSON.parse(fs.readFileSync(oc.primary, 'utf8'));
+    expect(oc.primary).toContain(`${path.sep}.opencode${path.sep}proofable.json`);
+    expect(ocPointer.origin).toBe('opencode');
+    expect(ocPointer.mount).toBe('.proofable/mount.json');
+  });
+
+  it('maps vscode apply host onto the cursor adapter', () => {
+    expect(normalizeApplyHost('vscode')).toBe('cursor');
+    expect(normalizeApplyHost('CURSOR')).toBe('cursor');
+    expect(normalizeApplyHost('acp')).toBeNull();
+    const bundle = buildRuntimeBundle({ identity, delegation });
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'proofable-vscode-'));
+    const result = applyRuntimeBundle('vscode', bundle, tmp);
+    expect(result.flavor).toBe('cursor');
+    expect(result.primary).toContain(`${path.sep}.cursor${path.sep}rules${path.sep}`);
   });
   describe('evaluateMountFileHealth', () => {
     it('reports needsRefresh false for valid bundle with delegation', () => {

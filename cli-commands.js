@@ -28,7 +28,7 @@ export const PROOFABLE_EXAMPLES_NPX = `${PROOFABLE_NPX} examples`;
 
 /**
  * @param {string} agentId
- * @param {'cursor' | 'claude' | 'codex'} [host]
+ * @param {'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode'} [host]
  */
 export function proofableMountApply(agentId, host = 'cursor') {
   const id = String(agentId || '').trim();
@@ -37,7 +37,7 @@ export function proofableMountApply(agentId, host = 'cursor') {
 
 /**
  * @param {string} agentId
- * @param {'cursor' | 'claude' | 'codex'} [host]
+ * @param {'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode'} [host]
  */
 export function proofableMountApplyNpx(agentId, host = 'cursor') {
   const id = String(agentId || '').trim();

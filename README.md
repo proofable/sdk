@@ -86,7 +86,7 @@ npx -y @proofable/sdk mount <agentId> --apply <host>
 npx -y @proofable/sdk doctor --live
 ```
 
-`--apply` accepts `cursor`, `claude`, or `codex`. Setup steps: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup).
+`--apply` accepts `cursor`, `claude`, `codex`, `hermes`, `openclaw`, or `opencode`. VS Code uses `--apply cursor`. Setup steps: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup).
 
 ## Core methods
 

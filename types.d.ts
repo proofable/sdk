@@ -990,6 +990,7 @@
       provider?: string;
       model?: string;
       mode?: string;
+      origin?: 'hermes' | 'openclaw' | 'opencode' | 'cursor' | 'claude' | 'codex' | 'hosted' | 'other';
     };
     capabilities?: Record<string, boolean>;
     instructions?: string;
@@ -1338,7 +1339,7 @@ declare module '@proofable/sdk/runtime-mount' {
       capabilities: string[];
       skills: unknown[];
       services?: unknown[];
-      defaultRuntime?: { provider?: string; model?: string };
+      defaultRuntime?: { provider?: string; model?: string; mode?: string; origin?: 'hermes' | 'openclaw' | 'opencode' | 'cursor' | 'claude' | 'codex' | 'hosted' | 'other' };
     };
     delegation: Record<string, unknown> | null;
     effectiveRuntime: { provider: string; model: string } | null;
@@ -1390,7 +1391,7 @@ declare module '@proofable/sdk/runtime-mount' {
     skills?: unknown[];
     instructions?: string | null;
     services?: unknown[];
-    defaultRuntime?: { provider?: string; model?: string } | null;
+    defaultRuntime?: { provider?: string; model?: string; mode?: string; origin?: 'hermes' | 'openclaw' | 'opencode' | 'cursor' | 'claude' | 'codex' | 'hosted' | 'other' } | null;
   }
 
   export interface AgentDelegationRow {
@@ -1484,6 +1485,11 @@ declare module '@proofable/sdk/runtime-mount' {
 
 declare module '@proofable/sdk/runtime-adapters' {
   export const MOUNT_MANIFEST_RELATIVE: string;
+  export const RUNTIME_POINTER_SCHEMA: string;
+  export const APPLY_HOSTS: readonly string[];
+  export const APPLY_HOST_ALIASES: Readonly<Record<string, string>>;
+  export const ACP_POINTER_DIRS: Readonly<Record<string, string>>;
+  export function normalizeApplyHost(value: string | null | undefined): string | null;
   export function sanitizeAgentIdForFilename(agentId: string): string;
   export function bundleToCursorRules(bundle: Record<string, unknown>): string;
   export function bundleToClaudeMd(bundle: Record<string, unknown>): string;
@@ -1491,7 +1497,7 @@ declare module '@proofable/sdk/runtime-adapters' {
   export function readMountManifest(cwd: string): Record<string, unknown> | null;
   export function writeMountManifest(bundle: Record<string, unknown>, cwd: string): string;
   export function applyRuntimeBundle(
-    flavor: 'cursor' | 'claude' | 'codex',
+    flavor: 'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode' | 'vscode',
     bundle: Record<string, unknown>,
     cwd: string,
     options?: { dryRun?: boolean }
@@ -1519,8 +1525,8 @@ declare module '@proofable/sdk/mcp-hosts' {
   export const PROOFABLE_EXAMPLES_NPX: string;
   export const PROOFABLE_QUICKSTART_NPX: string;
   export const PROOFABLE_MOUNT_WORKFLOW: string;
-  export function proofableMountApply(agentId: string, host?: 'cursor' | 'claude' | 'codex'): string;
-  export function proofableMountApplyNpx(agentId: string, host?: 'cursor' | 'claude' | 'codex'): string;
+  export function proofableMountApply(agentId: string, host?: 'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode'): string;
+  export function proofableMountApplyNpx(agentId: string, host?: 'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode'): string;
   export function proofableCmd(subcommand: string): string;
   export function proofableNpx(subcommand: string): string;
   export function buildMcpHttpConfig(accessKey?: string | null): { type: 'http'; url: string; headers?: { Authorization: string } };
@@ -1548,8 +1554,8 @@ declare module '@proofable/sdk/cli-commands' {
   export const PROOFABLE_EXAMPLES_NPX: string;
   export const PROOFABLE_QUICKSTART_NPX: string;
   export const PROOFABLE_MOUNT_WORKFLOW: string;
-  export function proofableMountApply(agentId: string, host?: 'cursor' | 'claude' | 'codex'): string;
-  export function proofableMountApplyNpx(agentId: string, host?: 'cursor' | 'claude' | 'codex'): string;
+  export function proofableMountApply(agentId: string, host?: 'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode'): string;
+  export function proofableMountApplyNpx(agentId: string, host?: 'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode'): string;
   export function proofableCmd(subcommand: string): string;
   export function proofableNpx(subcommand: string): string;
 }

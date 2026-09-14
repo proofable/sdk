@@ -20,7 +20,7 @@ import {
   normalizeWallet,
   evaluateMountFileHealth
 } from '../runtime-mount.js';
-import { applyRuntimeBundle, readMountManifest } from '../runtime-adapters.js';
+import { applyRuntimeBundle, readMountManifest, writeMountManifest, APPLY_HOSTS, normalizeApplyHost, MOUNT_MANIFEST_RELATIVE } from '../runtime-adapters.js';
 
 const __cliDir = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PACKAGE_VERSION = (() => {
@@ -963,6 +963,7 @@ function parseArgs(argv) {
     agent: '',
     apply: '',
     agentTarget: '',
+    importTarget: '',
     gateCommand: '',
     subject: '',
     gateTarget: ''
@@ -1013,13 +1014,17 @@ function parseArgs(argv) {
     }
     if (token === '--apply') {
       const value = argv[index + 1];
-      if (!value) throw new Error('--apply requires a value (cursor, claude, or codex)');
+      if (!value) throw new Error('--apply requires a value (cursor, claude, codex, hermes, openclaw, or opencode)');
       options.apply = value.trim().toLowerCase();
       index += 1;
       continue;
     }
     if (command === 'mount' && !token.startsWith('-') && !options.agentTarget) {
       options.agentTarget = token;
+      continue;
+    }
+    if (command === 'import' && !token.startsWith('-') && !options.importTarget) {
+      options.importTarget = token;
       continue;
     }
     if (token === '--subject') {
@@ -1065,6 +1070,7 @@ function printUsage(exitCode = 0) {
     '  examples      Show assistant prompts to try after install',
     '  doctor        Deep check: config status, profile connection, and live MCP context',
     '  mount <id>    Connect a Trusted Agent to a project or runtime',
+    '  import <src>  Inspect a package, repo, card, or runtime link',
     '  gate check <file> --subject <id>   Check a Gate Policy file against a subject',
     '  gate get <gateId>                  Read a published gate snapshot',
     '  help          Show this message',
@@ -1076,7 +1082,7 @@ function printUsage(exitCode = 0) {
     '  --oauth                  Force browser OAuth (ignore PROOFABLE_ACCESS_KEY in the environment; stores the refresh token that `proofable refresh` uses)',
     '  --live                   Run live MCP checks (uses IDE credential or --access-key)',
     '  --agent <agentId>        Agent id for mount (also accepted positionally: `proofable mount <agentId>`)',
-    '  --apply <cursor|claude|codex>  Write mounted agent rules to the current project',
+    '  --apply <cursor|claude|codex|hermes|openclaw|opencode>  Write mounted agent rules to the current project',
     '  --json                   Print JSON output',
     '  --dry-run                Preview changes without writing files'
   ];
@@ -1789,7 +1795,7 @@ async function runMount(options) {
   const accessKey = await resolveLiveAccessKeyWithRefresh(options, scope, cwd);
   const agentTarget = String(options.agentTarget || options.agent || '').trim();
   if (!agentTarget) {
-    throw new Error('Usage: proofable mount <agentId> [--apply cursor|claude|codex]');
+    throw new Error('Usage: proofable mount <agentId> [--apply cursor|claude|codex|hermes|openclaw|opencode]');
   }
   if (!accessKey) {
     throw new Error('Credential required. Run `npx -y @proofable/sdk auth --oauth` or pass --access-key.');
@@ -1806,15 +1812,19 @@ async function runMount(options) {
       signal: controller.signal
     });
 
-    const applyFlavor = String(options.apply || '').trim().toLowerCase();
+    const requestedApply = String(options.apply || '').trim();
+    const applyFlavor = normalizeApplyHost(requestedApply);
+    if (requestedApply && !applyFlavor) {
+      throw new Error(`--apply must be ${APPLY_HOSTS.join(', ')}`);
+    }
     let applyResult = null;
     if (applyFlavor) {
-      if (!['cursor', 'claude', 'codex'].includes(applyFlavor)) {
-        throw new Error('--apply must be cursor, claude, or codex');
-      }
       applyResult = applyRuntimeBundle(applyFlavor, bundle, cwd, { dryRun: options.dryRun });
     } else if (!options.json) {
-      applyRuntimeBundle('cursor', bundle, cwd, { dryRun: options.dryRun });
+      const manifestPath = options.dryRun
+        ? path.join(cwd, MOUNT_MANIFEST_RELATIVE)
+        : writeMountManifest(bundle, cwd);
+      applyResult = { flavor: null, written: [manifestPath], primary: manifestPath, manifestPath };
     }
 
     const payload = {
@@ -1848,6 +1858,161 @@ async function runMount(options) {
       logStep('ok', 'wrote', path.join(cwd, '.proofable', 'mount.json'));
     }
     writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
+    writeCliLine('');
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const IMPORT_SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'coverage', '.next']);
+const IMPORT_SECRET_NAME = /(\.env(\..+)?|\.pem|\.key|credentials\.(json|ya?ml)|secrets\.(json|ya?ml)|oauth.*\.(json|db))$/i;
+
+function collectImportFiles(dir, into, root = dir) {
+  if (into.length >= 40) return;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (into.length >= 40) return;
+    if (entry.name === '.' || entry.name === '..') continue;
+    if (IMPORT_SKIP_DIRS.has(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    let stat;
+    try {
+      stat = fs.lstatSync(full);
+    } catch {
+      continue;
+    }
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) {
+      collectImportFiles(full, into, root);
+      continue;
+    }
+    if (!stat.isFile() || stat.size > 256 * 1024) continue;
+    if (IMPORT_SECRET_NAME.test(entry.name)) continue;
+    const rel = path.relative(root, full).replace(/\\/g, '/');
+    into.push({ path: rel, content: fs.readFileSync(full, 'utf8') });
+  }
+}
+
+function readImportSource(target) {
+  const value = String(target || '').trim();
+  if (!value) {
+    throw new Error('Usage: proofable import <path|url> [--json]');
+  }
+  if (/^https?:\/\//i.test(value)) {
+    return { url: value };
+  }
+  const resolved = path.resolve(value);
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`Source not found: ${value}`);
+  }
+  const stat = fs.lstatSync(resolved);
+  if (stat.isSymbolicLink()) {
+    throw new Error('Refusing to follow a symlink.');
+  }
+  if (stat.isDirectory()) {
+    const files = [];
+    collectImportFiles(resolved, files, resolved);
+    if (files.length === 0) {
+      throw new Error('No importable files in that directory.');
+    }
+    return { files, filename: path.basename(resolved) };
+  }
+  if (stat.size > 8 * 1024 * 1024) {
+    throw new Error('That package is too large.');
+  }
+  if (/\.(zip|tgz|tar|gz)$/i.test(resolved)) {
+    return {
+      archiveBase64: fs.readFileSync(resolved).toString('base64'),
+      filename: path.basename(resolved)
+    };
+  }
+  return {
+    text: fs.readFileSync(resolved, 'utf8'),
+    filename: path.basename(resolved)
+  };
+}
+
+async function postAgentImport(pathname, body, accessKey, signal) {
+  const base = String(process.env.PROOFABLE_API_URL || 'https://api.proofable.me').replace(/\/$/, '');
+  const response = await fetch(`${base}${pathname}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify(body),
+    signal
+  });
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !json) {
+    const message =
+      (json && (json.error?.message || json.error)) ||
+      `Import failed (${response.status}).`;
+    const error = new Error(typeof message === 'string' ? message : 'Import failed.');
+    error.status = response.status;
+    throw error;
+  }
+  return json;
+}
+
+async function runImport(options) {
+  const cwd = process.cwd();
+  const scope = resolveScope(options);
+  const accessKey = await resolveLiveAccessKeyWithRefresh(options, scope, cwd);
+  const target = String(options.importTarget || '').trim();
+  if (!target) {
+    throw new Error('Usage: proofable import <path|url> [--json]');
+  }
+  if (!accessKey) {
+    throw new Error('Credential required. Run `npx -y @proofable/sdk auth --oauth` or pass --access-key.');
+  }
+
+  const source = readImportSource(target);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const previewJson = await postAgentImport('/api/v1/agents/import/preview', source, accessKey, controller.signal);
+    const preview = previewJson.preview;
+    if (!preview) {
+      throw new Error('Inspect did not return a preview.');
+    }
+    const commitJson = await postAgentImport(
+      '/api/v1/agents/import/commit',
+      { preview, label: preview.identity?.label, agentId: preview.identity?.agentId },
+      accessKey,
+      controller.signal
+    );
+    const commit = commitJson.commit;
+    const payload = {
+      command: 'import',
+      preview,
+      commit,
+      hostedVerifyUrl: commit?.hostedVerifyUrl || null,
+      apply: commit?.runtimeHandoff?.apply || null
+    };
+    if (options.json) {
+      printJson(payload);
+      return payload;
+    }
+    emitCliBanner(options);
+    writeCliLine(paint('import', 'green'));
+    logStep('ok', 'agent', commit?.identityPrefill?.agentLabel || preview.identity?.label || target);
+    if (preview.excludedSecrets?.length) {
+      logStep('warn', 'secrets', 'Secrets were left out. Reconnect those apps next.');
+    }
+    if (commit?.hostedVerifyUrl) {
+      writeGuidanceLine(`Register identity: ${commit.hostedVerifyUrl}`);
+    }
+    if (commit?.runtimeHandoff?.apply) {
+      writeGuidanceLine(`Then connect the runtime: ${commit.runtimeHandoff.apply}`);
+    }
     writeCliLine('');
     return payload;
   } finally {
@@ -2859,6 +3024,10 @@ async function main() {
     }
     if (command === 'mount') {
       await runMount(options);
+      return;
+    }
+    if (command === 'import') {
+      await runImport(options);
       return;
     }
     if (command === 'examples') {

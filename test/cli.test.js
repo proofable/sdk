@@ -716,4 +716,12 @@ describe('proofable CLI', () => {
     await expect(runCli(['check', '--json'], context)).rejects.toMatchObject({ code: 1 });
   });
 
+  it('lists import and runtime apply hosts in usage', async () => {
+    const context = await makeCliContext();
+    const { stdout } = await runCli(['--help'], context);
+    expect(stdout).toContain('import <src>');
+    expect(stdout).toContain('hermes');
+    expect(stdout).toContain('openclaw');
+  });
+
 });

@@ -7,6 +7,22 @@ import path from 'node:path';
 import { RUNTIME_MOUNT_SCHEMA } from './runtime-mount.js';
 
 export const MOUNT_MANIFEST_RELATIVE = path.join('.proofable', 'mount.json');
+export const RUNTIME_POINTER_SCHEMA = 'proofable.runtime-pointer.v1';
+export const APPLY_HOSTS = Object.freeze(['cursor', 'claude', 'codex', 'hermes', 'openclaw', 'opencode']);
+export const APPLY_HOST_ALIASES = Object.freeze({ vscode: 'cursor' });
+/** ACP-native project runtimes share one sidecar: `{dir}/proofable.json` → `.proofable/mount.json`. */
+export const ACP_POINTER_DIRS = Object.freeze({
+  hermes: '.hermes',
+  openclaw: '.openclaw',
+  opencode: '.opencode'
+});
+
+export function normalizeApplyHost(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  const mapped = APPLY_HOST_ALIASES[raw] || raw;
+  return APPLY_HOSTS.includes(mapped) ? mapped : null;
+}
 
 /**
  * @param {string} agentId
@@ -163,14 +179,38 @@ export function writeMountManifest(bundle, cwd) {
   return manifestPath;
 }
 
+function writeRuntimePointer(flavor, cwd, dryRun) {
+  const dirName = ACP_POINTER_DIRS[flavor];
+  if (!dirName) throw new Error(`Unsupported ACP pointer host: ${flavor}`);
+  const sidecarPath = path.join(cwd, dirName, 'proofable.json');
+  if (!dryRun) {
+    fs.mkdirSync(path.join(cwd, dirName), { recursive: true });
+    fs.writeFileSync(
+      sidecarPath,
+      `${JSON.stringify(
+        {
+          schema: RUNTIME_POINTER_SCHEMA,
+          mount: '.proofable/mount.json',
+          origin: flavor
+        },
+        null,
+        2
+      )}\n`
+    );
+  }
+  return sidecarPath;
+}
+
 /**
- * @param {'cursor' | 'claude' | 'codex'} flavor
+ * @param {'cursor' | 'claude' | 'codex' | 'hermes' | 'openclaw' | 'opencode' | 'vscode'} flavor
  * @param {import('./runtime-mount.js').RuntimeBundle} bundle
  * @param {string} cwd
  * @param {{ dryRun?: boolean }} [options]
  */
 export function applyRuntimeBundle(flavor, bundle, cwd, options = {}) {
   const dryRun = Boolean(options.dryRun);
+  const host = normalizeApplyHost(flavor);
+  if (!host) throw new Error(`Unsupported runtime adapter: ${flavor}`);
   const safeId = sanitizeAgentIdForFilename(bundle.identity.agentId);
   const written = [];
 
@@ -179,7 +219,13 @@ export function applyRuntimeBundle(flavor, bundle, cwd, options = {}) {
     : writeMountManifest(bundle, cwd);
   written.push(manifestPath);
 
-  if (flavor === 'cursor') {
+  if (ACP_POINTER_DIRS[host]) {
+    const sidecarPath = writeRuntimePointer(host, cwd, dryRun);
+    written.push(sidecarPath);
+    return { flavor: host, written, primary: sidecarPath, manifestPath };
+  }
+
+  if (host === 'cursor') {
     const rulesDir = path.join(cwd, '.cursor', 'rules');
     const rulesPath = path.join(rulesDir, `proofable-agent-${safeId}.mdc`);
     if (!dryRun) {
@@ -187,27 +233,27 @@ export function applyRuntimeBundle(flavor, bundle, cwd, options = {}) {
       fs.writeFileSync(rulesPath, bundleToCursorRules(bundle), 'utf8');
     }
     written.push(rulesPath);
-    return { flavor, written, primary: rulesPath, manifestPath };
+    return { flavor: host, written, primary: rulesPath, manifestPath };
   }
 
-  if (flavor === 'claude') {
+  if (host === 'claude') {
     const claudePath = path.join(cwd, '.claude', 'PROOFABLE_AGENT.md');
     if (!dryRun) {
       fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
       fs.writeFileSync(claudePath, bundleToClaudeMd(bundle), 'utf8');
     }
     written.push(claudePath);
-    return { flavor, written, primary: claudePath, manifestPath };
+    return { flavor: host, written, primary: claudePath, manifestPath };
   }
 
-  if (flavor === 'codex') {
+  if (host === 'codex') {
     const codexPath = path.join(cwd, '.proofable', `codex-agent-${safeId}.json`);
     if (!dryRun) {
       fs.mkdirSync(path.join(cwd, '.proofable'), { recursive: true });
       fs.writeFileSync(codexPath, bundleToCodexJson(bundle), 'utf8');
     }
     written.push(codexPath);
-    return { flavor, written, primary: codexPath, manifestPath };
+    return { flavor: host, written, primary: codexPath, manifestPath };
   }
 
   throw new Error(`Unsupported runtime adapter: ${flavor}`);
