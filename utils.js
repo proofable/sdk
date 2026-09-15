@@ -662,11 +662,9 @@ export async function signMessage({ provider, message, walletAddress, chain } = 
       }
     }
 
-    try {
-      const sig = await resolvedProvider.request({ method: 'eth_sign', params: [address, msg] });
-      if (typeof sig === 'string' && sig) return sig;
-    } catch { /* try next method */ }
-
+    // Fail closed: never fall back to eth_sign. It signs an opaque digest with no
+    // user-readable message or domain separation — the classic wallet-drainer
+    // primitive. `signMessage` below (EIP-191) remains the safe provider-native path.
     if (secondPersonalSignError || firstPersonalSignError) {
       const lastError = secondPersonalSignError || firstPersonalSignError;
       const isUserRejection = [4001, 'ACTION_REJECTED'].includes(lastError?.code);

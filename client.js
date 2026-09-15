@@ -1141,26 +1141,12 @@ export class ProofableClient {
             );
 
             if (methodUnsupported) {
-              this._log('personal_sign not supported; attempting eth_sign fallback');
-              try {
-                const enc = new TextEncoder();
-                const bytes = enc.encode(message);
-                const prefix = `\x19Ethereum Signed Message:\n${bytes.length}`;
-                const full = new Uint8Array(prefix.length + bytes.length);
-                for (let i = 0; i < prefix.length; i++) full[i] = prefix.charCodeAt(i);
-                full.set(bytes, prefix.length);
-                let payloadHex = '0x';
-                for (let i = 0; i < full.length; i++) payloadHex += full[i].toString(16).padStart(2, '0');
-                try {
-                  if (typeof window !== 'undefined') window.__PROOFABLE_ALLOW_ETH_SIGN__ = true;
-                  signature = await provider.request({ method: 'eth_sign', params: [walletAddress, payloadHex], proofableAllowEthSign: true });
-                } finally {
-                  try { if (typeof window !== 'undefined') delete window.__PROOFABLE_ALLOW_ETH_SIGN__; } catch { void 0; }
-                }
-              } catch (fallbackErr) {
-                this._log('eth_sign fallback failed', { message: fallbackErr?.message || String(fallbackErr) });
-                throw e;
-              }
+              this._log('personal_sign not supported by provider; refusing eth_sign fallback');
+              throw new ConfigurationError(
+                'This wallet does not support personal_sign (EIP-191), which is required to sign proofs. ' +
+                'Please use a wallet that supports personal_sign (all major EVM wallets do). ' +
+                'NEUS never falls back to eth_sign for security reasons.'
+              );
             } else if (needsHex) {
               this._log('Retrying personal_sign with hex-encoded message');
               const hexMsg = toHexUtf8(message);
