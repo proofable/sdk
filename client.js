@@ -517,9 +517,11 @@ export class ProofableClient {
   }
 
   _getHubChainId() {
-    const configured = Number(this.config?.hubChainId);
+    // Canonical identity chain (Base mainnet 8453). Accepts `identityChainId`;
+    // `hubChainId` remains a deprecated alias for existing integrators.
+    const configured = Number(this.config?.identityChainId ?? this.config?.hubChainId);
     if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
-    return PROOFABLE_CONSTANTS.HUB_CHAIN_ID;
+    return PROOFABLE_CONSTANTS.IDENTITY_CHAIN_ID;
   }
 
   _normalizeIdentity(value) {
@@ -1188,7 +1190,7 @@ export class ProofableClient {
 
     const signature = isPlaceholderSignature(rawSignature) ? undefined : rawSignature;
 
-    const resolvedChainId = chainId || (chain ? null : PROOFABLE_CONSTANTS.HUB_CHAIN_ID);
+    const resolvedChainId = chainId || (chain ? null : PROOFABLE_CONSTANTS.IDENTITY_CHAIN_ID);
 
     const normalizeVerifierId = (id) => {
       if (typeof id !== 'string') return id;

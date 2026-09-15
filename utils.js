@@ -401,7 +401,7 @@ export function deriveDid(address, chainIdOrChain) {
     throw new SDKError('deriveDid: address is required', 'INVALID_ARGUMENT');
   }
 
-  const chainContext = chainIdOrChain || PROOFABLE_CONSTANTS.HUB_CHAIN_ID;
+  const chainContext = chainIdOrChain || PROOFABLE_CONSTANTS.IDENTITY_CHAIN_ID;
   const isCAIP = typeof chainContext === 'string' && chainContext.includes(':');
 
   if (isCAIP) {
@@ -931,6 +931,16 @@ export class StatusPoller {
 }
 
 export const PROOFABLE_CONSTANTS = {
+  /**
+   * Canonical EVM identity chain (Base mainnet) — the chain EVM DIDs and
+   * signer messages reference. Matches protocol chain-context-resolver.js
+   * CANONICAL_EVM_IDENTITY_CHAIN_ID. NOT the on-chain anchoring rail.
+   */
+  IDENTITY_CHAIN_ID: 8453,
+  /**
+   * Optional on-chain anchoring rail (Proofable hub contracts). Base Sepolia
+   * today; no mainnet hub deployment exists. Do not use for identity.
+   */
   HUB_CHAIN_ID: 84532,
 
   TESTNET_CHAINS: [
@@ -1020,7 +1030,7 @@ export function buildVerificationRequest({
   verifierIds,
   data,
   walletAddress,
-  chainId = PROOFABLE_CONSTANTS.HUB_CHAIN_ID,
+  chainId = PROOFABLE_CONSTANTS.IDENTITY_CHAIN_ID,
   options = undefined,
   signedTimestamp = Date.now()
 }) {

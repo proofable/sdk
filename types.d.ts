@@ -81,7 +81,8 @@
     paymentSignature?: string;
     extraHeaders?: Record<string, string>;
     timeout?: number;
-    hubChainId?: number;
+    /** Canonical EVM identity chain for DID/signing defaults (Base mainnet 8453). NOT the anchoring rail. */
+    identityChainId?: number;
     enableLogging?: boolean;
   }
 
@@ -594,6 +595,8 @@
   }
 
   export const PROOFABLE_CONSTANTS: {
+    IDENTITY_CHAIN_ID: number;
+    /** Optional on-chain anchoring rail (Base Sepolia today; no mainnet hub). */
     HUB_CHAIN_ID: number;
     TESTNET_CHAINS: number[];
     API_BASE_URL: string;

@@ -270,9 +270,9 @@ describe('Utils', () => {
   });
 
   describe('deriveDid()', () => {
-    it('should create DID from address', () => {
+    it('should create DID from address on the canonical identity chain', () => {
       const did = deriveDid('0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db');
-      expect(did).toBe('did:pkh:eip155:84532:0x742d35cc6634c0532925a3b8d82ab78c0d73c3db'); // DID standard uses lowercase
+      expect(did).toBe('did:pkh:eip155:8453:0x742d35cc6634c0532925a3b8d82ab78c0d73c3db'); // DID standard uses lowercase
     });
 
     it('should accept custom chain ID', () => {
@@ -282,7 +282,7 @@ describe('Utils', () => {
 
     it('should handle lowercase addresses', () => {
       const did = deriveDid('0x742d35cc6634c0532925a3b8d82ab78c0d73c3db');
-      expect(did).toBe('did:pkh:eip155:84532:0x742d35cc6634c0532925a3b8d82ab78c0d73c3db');
+      expect(did).toBe('did:pkh:eip155:8453:0x742d35cc6634c0532925a3b8d82ab78c0d73c3db');
     });
   });
 
