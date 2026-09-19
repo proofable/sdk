@@ -1347,6 +1347,7 @@ declare module '@proofable/sdk/runtime-mount' {
     delegation: Record<string, unknown> | null;
     effectiveRuntime: { provider: string; model: string } | null;
     tools: unknown[];
+    resources: unknown[];
     secretBindings: unknown[];
     memoryRefs?: unknown[];
     enforce: {
@@ -1454,12 +1455,14 @@ declare module '@proofable/sdk/runtime-mount' {
     delegationQHash?: string | null;
     controllerWallet?: string | null;
     tools?: unknown[];
+    resources?: unknown[];
     secretBindings?: unknown[];
   }): RuntimeMountBundle;
   export function buildRuntimeMountFromRoster(
     roster: AgentRoster,
     selector: { agentId?: string; agentWallet?: string; identityQHash?: string },
-    controllerWallet: string
+    controllerWallet: string,
+    mountContext?: { tools?: unknown[]; resources?: unknown[]; secretBindings?: unknown[] }
   ): RuntimeMountBundle | { error: string; message: string };
   export function profileAgentToIdentitySeed(profileAgent: Record<string, unknown>): AgentIdentityRow;
   export function isRuntimeBundle(value: unknown): boolean;

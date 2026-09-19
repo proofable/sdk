@@ -72,6 +72,37 @@ describe('runtime-mount', () => {
     expect(bundle.authority.controllerWallet).toBe(identity.agentWallet);
   });
 
+  it('keeps same-wallet named agents delegated and filters mounted capability rows', () => {
+    const sameWalletDelegation = {
+      ...delegation,
+      controllerWallet: identity.agentWallet,
+      agentWallet: identity.agentWallet,
+      allowedActions: ['read_context']
+    };
+    const bundle = buildRuntimeBundle({
+      identity,
+      delegation: sameWalletDelegation,
+      tools: [
+        { name: 'github_list', action: 'read_context' },
+        { name: 'github_write', action: 'send_message' }
+      ],
+      resources: [{ id: 'github', action: 'read_context' }],
+      secretBindings: [{
+        qHash: `0x${'c'.repeat(64)}`,
+        alias: 'GITHUB_TOKEN',
+        value: 'never-return'
+      }]
+    });
+    expect(bundle.authority.mode).toBe('delegated');
+    expect(bundle.tools).toEqual([{ name: 'github_list', action: 'read_context' }]);
+    expect(bundle.resources).toEqual([{ id: 'github', action: 'read_context' }]);
+    expect(bundle.secretBindings).toEqual([{
+      qHash: `0x${'c'.repeat(64)}`,
+      alias: 'GITHUB_TOKEN'
+    }]);
+    expect(JSON.stringify(bundle)).not.toContain('never-return');
+  });
+
   it('marks dedicated-wallet agents as delegated authority', () => {
     const bundle = buildRuntimeBundle({
       identity,
@@ -224,20 +255,25 @@ describe('runtime-mount', () => {
     expect(bundle.delegation).toBeNull();
   });
 
-  it('treats a shared-wallet identity as controller-authorized without self-delegation', () => {
+  it('keeps a shared-wallet named agent under its delegation', () => {
     const sharedWallet = identity.agentWallet;
     const bundle = buildRuntimeMountFromRoster(
       {
         identities: [identity],
-        delegations: [{ ...delegation, controllerWallet: sharedWallet, agentWallet: sharedWallet }]
+        delegations: [{
+          ...delegation,
+          controllerWallet: sharedWallet,
+          agentWallet: sharedWallet,
+          allowedActions: ['read_proofs']
+        }]
       },
       { agentId: identity.agentId },
       sharedWallet
     );
 
-    expect(bundle.authority).toEqual({ mode: 'controller', controllerWallet: sharedWallet });
-    expect(bundle.delegation).toBeNull();
-    expect(bundle.trust.delegationQHash).toBeNull();
+    expect(bundle.authority).toEqual({ mode: 'delegated', controllerWallet: sharedWallet });
+    expect(bundle.delegation).toMatchObject({ allowedActions: ['read_proofs'] });
+    expect(bundle.trust.delegationQHash).toBe(delegation.qHash);
     expect(evaluateMountFileHealth(bundle)).toMatchObject({
       missingDelegation: false,
       needsRefresh: false

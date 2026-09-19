@@ -63,6 +63,18 @@ export function isDelegationExpired(expiresAt) {
   return Number.isFinite(ms) && ms > 0 && ms <= Date.now();
 }
 
+function filterMountedEntries(entries, authorityMode, allowedActions, deniedActions) {
+  const allowed = new Set(asStringArray(allowedActions));
+  const denied = new Set(asStringArray(deniedActions));
+  return (Array.isArray(entries) ? entries : []).filter(entry => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const action = asString(entry.action);
+    if (!action) return authorityMode === 'controller';
+    if (denied.has(action)) return false;
+    return authorityMode === 'controller' || allowed.has(action);
+  });
+}
+
 /**
  * @param {Array<Record<string, unknown>>} identities
  * @param {{ agentId?: string, agentWallet?: string, identityQHash?: string }} selector
@@ -234,9 +246,18 @@ export function buildRuntimeBundle(input) {
 
   const delegations = delegation ? [delegation] : [];
   const activeDelegations = delegations.filter(row => !row.isExpired).length;
-  const authorityMode = controllerWallet && controllerWallet === agentWallet
-    ? 'controller'
-    : (delegation ? 'delegated' : 'unbound');
+  const authorityMode = delegation
+    ? 'delegated'
+    : (controllerWallet && controllerWallet === agentWallet ? 'controller' : 'unbound');
+  const tools = filterMountedEntries(input.tools, authorityMode, allowedActions, deniedActions);
+  const resources = filterMountedEntries(input.resources, authorityMode, allowedActions, deniedActions);
+  const secretBindings = (Array.isArray(input.secretBindings) ? input.secretBindings : [])
+    .filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map(entry => ({
+      qHash: normalizeQHash(entry.qHash),
+      ...(asString(entry.alias) ? { alias: asString(entry.alias) } : {})
+    }))
+    .filter(entry => entry.qHash);
 
   return {
     schema: RUNTIME_MOUNT_SCHEMA,
@@ -284,8 +305,9 @@ export function buildRuntimeBundle(input) {
       }
       : null,
     effectiveRuntime,
-    tools: Array.isArray(input.tools) ? input.tools : [],
-    secretBindings: Array.isArray(input.secretBindings) ? input.secretBindings : [],
+    tools,
+    resources,
+    secretBindings,
     memoryRefs: Array.isArray(input.memoryRefs) ? input.memoryRefs : undefined,
     enforce: {
       deniedActions,
@@ -635,7 +657,7 @@ export function evaluateRuntimeAction(bundle, action, options = {}) {
  * @param {{ agentId?: string, agentWallet?: string, identityQHash?: string }} selector
  * @param {string} controllerWallet
  */
-export function buildRuntimeMountFromRoster(roster, selector, controllerWallet) {
+export function buildRuntimeMountFromRoster(roster, selector, controllerWallet, mountContext = {}) {
   const identities = Array.isArray(roster?.identities) ? roster.identities : [];
   const delegations = Array.isArray(roster?.delegations) ? roster.delegations : [];
   const identity = pickIdentity(identities, selector);
@@ -648,12 +670,12 @@ export function buildRuntimeMountFromRoster(roster, selector, controllerWallet) 
   const agentWallet = normalizeWallet(identity.agentWallet);
   const agentId = asString(identity.agentId);
   const normalizedControllerWallet = normalizeWallet(controllerWallet);
-  const controllerControlled = Boolean(
-    normalizedControllerWallet && agentWallet && normalizedControllerWallet === agentWallet
+  const delegation = pickActiveDelegation(
+    delegations,
+    normalizedControllerWallet,
+    agentWallet,
+    agentId
   );
-  const delegation = controllerControlled
-    ? null
-    : pickActiveDelegation(delegations, normalizedControllerWallet, agentWallet, agentId);
   try {
     return buildRuntimeBundle({
       identity,
@@ -661,8 +683,9 @@ export function buildRuntimeMountFromRoster(roster, selector, controllerWallet) 
       controllerWallet: normalizedControllerWallet,
       identityQHash: asString(identity.qHash || selector.identityQHash),
       delegationQHash: delegation ? asString(delegation.qHash) : null,
-      tools: [],
-      secretBindings: []
+      tools: mountContext.tools,
+      resources: mountContext.resources,
+      secretBindings: mountContext.secretBindings
     });
   } catch (err) {
     return {
