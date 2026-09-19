@@ -116,26 +116,8 @@ export function pickActiveDelegation(delegations, controllerWallet, agentWallet,
  * @param {Record<string, unknown> | null | undefined} delegation
  */
 export function resolveEffectiveRuntime(identity, delegation) {
-  const delProvider = asString(delegation?.provider);
-  const delModel = asString(delegation?.model);
-  if (delProvider || delModel) {
-    return {
-      provider: delProvider || 'openai',
-      model: delModel || ''
-    };
-  }
-  const defaultRuntime =
-    identity?.defaultRuntime && typeof identity.defaultRuntime === 'object'
-      ? identity.defaultRuntime
-      : null;
-  const idProvider = asString(defaultRuntime?.provider);
-  const idModel = asString(defaultRuntime?.model);
-  if (idProvider || idModel) {
-    return {
-      provider: idProvider || 'openai',
-      model: idModel || ''
-    };
-  }
+  void identity;
+  void delegation;
   return null;
 }
 
@@ -217,6 +199,8 @@ export function buildRuntimeBundle(input) {
     throw new Error('Runtime mount requires verified agent identity (agentId, agentWallet, identityQHash).');
   }
 
+  // Runtime selection belongs to the execution resolver. Proof metadata is
+  // preserved for compatibility and display only.
   const effectiveRuntime = resolveEffectiveRuntime(identity, delegation);
   const deniedActions = delegation ? asStringArray(delegation.deniedActions) : [];
   const allowedActions = delegation ? asStringArray(delegation.allowedActions) : undefined;

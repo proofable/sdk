@@ -57,7 +57,7 @@ describe('runtime-mount', () => {
       humanApprovalRequiredForNewClaims: true,
       preApprovedContentOnly: true
     });
-    expect(bundle.effectiveRuntime).toEqual({ provider: 'openai', model: 'gpt-4.1' });
+    expect(bundle.effectiveRuntime).toBeNull();
     expect(bundle.authority.mode).toBe('delegated');
     expect(bundle.authority.controllerWallet).toBe(delegation.controllerWallet);
   });
@@ -89,9 +89,13 @@ describe('runtime-mount', () => {
     );
   });
 
-  it('prefers delegation runtime over identity default', () => {
-    const runtime = resolveEffectiveRuntime(identity, delegation);
-    expect(runtime?.model).toBe('gpt-4.1');
+  it('never selects runtime from mount or proof metadata', () => {
+    expect(resolveEffectiveRuntime(identity, delegation)).toBeNull();
+    expect(buildRuntimeBundle({
+      identity,
+      delegation,
+      runtime: { provider: 'openai', model: 'gpt-5.5' }
+    }).effectiveRuntime).toBeNull();
   });
 
   it('picks identity and delegation by agentId', () => {
