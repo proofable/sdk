@@ -9,6 +9,11 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+### Changed
+
+- **Trust guidance follows the hosted workflow.** The packaged trust-workflow skill and runtime-mount trust instructions use `proofable_verify_or_guide` first; `proofable_proofs_check` is only for an explicit yes/no eligibility, gate, or access question.
+- **The packaged `proofable-setup` skill ships with the SDK.** Published skills are generated from the canonical `proofable/mcp` `skills/` directory; CI verifies parity so the two packages can never publish different skill content.
+
 ## [0.1.1] - 2026-09-13
 
 ### Added

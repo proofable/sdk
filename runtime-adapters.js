@@ -88,9 +88,10 @@ ${denied ? `Denied actions (do not perform without new approval):\n${denied}` : 
 
 ## Trust workflow
 1. Call \`proofable_context\` once per session when Proofable MCP is available.
-2. Before a sensitive action, call \`proofable_proofs_check\` and then \`proofable_verify_or_guide\` when needed.
-3. Do not invent proof IDs, accounts, or proof fields.
-4. Summarize the result as Passed, Action needed, or Blocked. Do not show raw tool output.
+2. Before a sensitive action, call \`proofable_verify_or_guide\` directly.
+3. Use \`proofable_proofs_check\` only for a yes/no eligibility, gate, or access question.
+4. Do not invent proof IDs, accounts, or proof fields.
+5. Summarize the result as Passed, Action needed, or Blocked. Do not show raw tool output.
 
 ## Proof references
 - Identity: ${bundle.trust.identityProofUrl}

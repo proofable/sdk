@@ -25,11 +25,11 @@ Use this before an assistant runs sensitive tools or takes another verification-
 
 1. **`proofable_context`** once per session. Prefer signed-in profile context; omit wallet fields on check/verify tools.
 2. **Profile agent:** **`proofable_agent_mount`** (or `proofable mount <agentId> --apply <host>`) for identity, permissions, skills, and context.
-3. **Trust before action:** **`proofable_proofs_check`** → **`proofable_verify_or_guide`**. `proofable_proofs_check` is eligibility-only; never use it for memory, context, or content retrieval. When signed in, ownership checks continue with **`proofable_verify`**. Share a browser link only when a tool returns one.
+3. **Trust before action:** use **`proofable_verify_or_guide`** directly. It reuses qualifying proofs or returns the next secure step. Use **`proofable_proofs_check`** only for an explicit yes/no eligibility, gate, or access question; never use it for memory, context, or content retrieval. When signed in, ownership checks continue with **`proofable_verify`**. Share a browser link only when a tool returns one.
 4. **Agent:** **`proofable_agent_link`**. If missing, **`proofable_agent_create`** (a dedicated account needs a key you create and hold; pass only its public address). Then **`proofable_agent_mount`**.
 5. **Proofs and context:** use the `proofable_context` context index first, then **`proofable_proofs_get`** with a known proof ID and `include=content` for an exact body.
 6. **Vault:** **`proofable_secret_list`** / **`proofable_secret_create`** / **`proofable_secret_revoke`**.
-7. Reuse existing proofs via **`proofable_proofs_check`** before creating new ones. When signed in, `proofable_context` returns the current profile context; re-call it only after a profile change.
+7. Reuse existing proofs via **`proofable_verify_or_guide`** before creating new ones. When signed in, `proofable_context` returns the current profile context; re-call it only after a profile change.
 8. Summarize as **Proofable**.
 
 ## Proofable format

@@ -57,6 +57,12 @@
       "rules": {
         "no-console": "off"
       }
+    },
+    {
+      "files": ["scripts/**/*.mjs"],
+      "rules": {
+        "no-console": "off"
+      }
     }
   ],
   "ignorePatterns": [

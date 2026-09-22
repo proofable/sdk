@@ -14,9 +14,10 @@ function packagedSkillNames() {
 }
 
 describe('packaged Proofable skills', () => {
-  it('ships the integration and trust workflow skills used by the CLI', () => {
+  it('ships the public skills mirrored from proofable/mcp', () => {
     expect(packagedSkillNames()).toEqual([
       'proofable-integrate',
+      'proofable-setup',
       'proofable-trust-workflow'
     ]);
   });
