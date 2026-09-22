@@ -26,9 +26,10 @@ function directoryDigest(dir) {
       if (entry.isDirectory()) {
         visit(fullPath);
       } else if (entry.isFile()) {
-        entries.push(
-          `${path.relative(dir, fullPath).replaceAll(path.sep, '/')}\0${readFileSync(fullPath, 'utf8')}`
-        );
+        // Normalize line endings so a checkout's autocrlf setting cannot
+        // create false parity failures against the canonical copies.
+        const text = readFileSync(fullPath, 'utf8').replaceAll('\r\n', '\n');
+        entries.push(`${path.relative(dir, fullPath).replaceAll(path.sep, '/')}\0${text}`);
       }
     }
   };
