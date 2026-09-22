@@ -5,11 +5,9 @@ Add verification gates, reusable proof, and agent permissions to your app.
 [![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/%40proofable%2Fsdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-## Start here
+Verify someone once. Check that proof forever after.
 
-```bash
-npx -y @proofable/sdk setup
-```
+## Start here
 
 **Any MCP client**
 
@@ -21,16 +19,26 @@ npx -y @proofable/sdk setup
 npm install @proofable/sdk
 ```
 
-**Build**
+**Verify a person in three lines**
 
 ```js
-import { ProofableClient, defineGate } from '@proofable/sdk';
+import { getHostedCheckoutUrl } from '@proofable/sdk';
 
-const proofable = new ProofableClient();
-const gate = defineGate([{ verifierId: 'proof-of-human' }]);
+window.location.assign(getHostedCheckoutUrl({
+  verifiers: ['proof-of-human'],
+  returnUrl: 'https://app.example.com/auth/callback',
+}));
+```
 
-const result = await proofable.gateCheck({
-  gate,
+They verify on Proofable, return with a proof ID (`qHash`), and every future decision reads that proof. No UI to build. No gate to define.
+
+**Check the proof on your server**
+
+```js
+import { ProofableClient } from '@proofable/sdk';
+
+const result = await new ProofableClient().gateCheck({
+  gate: [{ verifierId: 'proof-of-human' }],
   subject: { accountId: user.accountAddress },
 });
 
@@ -45,35 +53,33 @@ https://docs.proofable.me
 
 [SDK](https://docs.proofable.me/sdks/javascript) | [CLI](https://docs.proofable.me/sdks/cli) | [MCP](https://mcp.proofable.me/mcp) | [API](https://docs.proofable.me/api/overview) | [Examples](https://docs.proofable.me/use-cases/gate-access) | [Docs](https://docs.proofable.me)
 
-Requires Node.js 20 or later.
+Requires Node.js 20 or later. Full CLI setup: `npx -y @proofable/sdk setup`.
+
+## When one check becomes a gate
+
+One check is not a gate. Reach for a gate when the decision needs several checks, a price, or a schedule.
+
+```js
+import { ProofableClient, defineGate } from '@proofable/sdk';
+
+const proofable = new ProofableClient();
+const gate = defineGate([
+  { verifierId: 'proof-of-human' },
+  { verifierId: 'ownership-dns-txt', match: { domain: 'acme.com' } },
+]);
+
+const result = await proofable.gateCheck({ gate, subject });
+```
+
+A published `gateId` is optional and only for a persisted listing, price, or schedule. Never ship access keys in browser code.
 
 ## Gate a React page
 
 ```jsx
-import { defineGate } from '@proofable/sdk';
 import { VerifyGate } from '@proofable/sdk/widgets';
 
-const gate = defineGate([{ verifierId: 'proof-of-human' }]);
-
-<VerifyGate gate={gate} onVerified={grantAccess} />;
+<VerifyGate gate={[{ verifierId: 'proof-of-human' }]} onVerified={grantAccess} />;
 ```
-
-A published `gateId` is optional when you want a persisted listing, price, or schedule. Never ship access keys in browser code.
-
-## Send someone to Hosted Verify
-
-```js
-import { getHostedCheckoutUrl } from '@proofable/sdk';
-
-const url = getHostedCheckoutUrl({
-  verifiers: ['proof-of-human'],
-  returnUrl: 'https://app.example.com/auth/callback'
-});
-
-window.location.assign(url);
-```
-
-After completion, Proofable redirects back with a proof ID in the `qHash` field. Store it with your user or record.
 
 ## Connect an editor or agent host
 
