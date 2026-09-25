@@ -7,12 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/changelog).
 
-## [Unreleased]
+## [0.1.2] - 2026-09-24
 
 ### Changed
 
+- **Delegation authority follows the canonical action contract.** `getHostedAgentCreateUrl` and `verify` no longer accept or forward `scope` and `permissions`. Authority is `allowedActions` minus `deniedActions` only; spend delegations carry `allowedPaymentTypes` and `maxSpend`, and `allowedOrigins` bounds app-agent origins. Runtime mounts surface `allowedActions`/`deniedActions` without a scope string.
 - **Trust guidance follows the hosted workflow.** The packaged trust-workflow skill and runtime-mount trust instructions use `proofable_verify_or_guide` first; `proofable_proofs_check` is only for an explicit yes/no eligibility, gate, or access question.
 - **The packaged `proofable-setup` skill ships with the SDK.** Published skills are generated from the canonical `proofable/mcp` `skills/` directory; CI verifies parity so the two packages can never publish different skill content.
+
+### Upgrade
+
+```bash
+npm install @proofable/sdk@0.1.2
+```
+
+`scope` and `permissions` are removed. Pass `allowedActions` (and `deniedActions` to exclude); pass `allowedPaymentTypes` with `maxSpend` for spend authority.
 
 ## [0.1.1] - 2026-09-13
 
@@ -118,6 +127,7 @@ Media placeholders for this release line. Drop the finished files under docs/ima
 </update-image-0.1.0>
 -->
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/proofable/sdk/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/proofable/sdk/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/proofable/sdk/releases/tag/v0.1.0

@@ -467,10 +467,9 @@
     returnUrl?: string;
     agentLabel?: string;
     agentType?: 'ai' | 'bot' | 'service' | 'automation' | 'agent' | string;
-    scope?: string;
     expiresAt?: number;
     maxSpend?: string;
-    permissions?: string[];
+    allowedPaymentTypes?: string[];
     allowedActions?: string[];
     deniedActions?: string[];
     runtimePolicy?: {
@@ -1013,8 +1012,6 @@
     controllerAccountId?: string;
     agentAccountId?: string;
     agentId?: string;
-    scope?: string;
-    permissions?: string[];
     maxSpend?: string;
     allowedPaymentTypes?: string[];
     receiptDisclosure?: 'none' | 'summary' | 'full';
@@ -1031,6 +1028,8 @@
     };
     allowedActions?: string[];
     deniedActions?: string[];
+    /** Exact web origins the delegated app may act from, or "*" for server callers. */
+    allowedOrigins?: string[];
     approvalPolicy?: {
       humanApprovalRequiredForNewClaims?: boolean;
       preApprovedContentOnly?: boolean;

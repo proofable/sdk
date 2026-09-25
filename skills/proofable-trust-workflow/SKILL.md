@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires a client that supports remote HTTP MCP servers and hosted OAuth.
 metadata:
   author: Proofable
-  version: "0.1.1"
+  version: "0.1.2"
   homepage: https://docs.proofable.me/mcp/setup
 ---
 

@@ -1019,8 +1019,6 @@ export class ProofableClient {
           ...(data?.controllerAccountId && { controllerAccountId: data.controllerAccountId }),
           ...(data?.agentAccountId && { agentAccountId: data.agentAccountId }),
           ...(data?.agentId && { agentId: data.agentId }),
-          ...(data?.scope && { scope: data.scope }),
-          ...(data?.permissions && { permissions: data.permissions }),
           ...(data?.maxSpend && { maxSpend: data.maxSpend }),
           ...(data?.allowedPaymentTypes && { allowedPaymentTypes: data.allowedPaymentTypes }),
           ...(data?.receiptDisclosure && { receiptDisclosure: data.receiptDisclosure }),

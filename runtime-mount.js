@@ -171,9 +171,9 @@ export function extractAgentContextFromProofs(proofs) {
           controllerWallet: vvData.controllerWallet || null,
           agentWallet: vvData.agentWallet || null,
           agentId: vvData.agentId || null,
-          scope: vvData.scope || 'global',
           allowedActions: asStringArray(vvData.allowedActions),
           deniedActions: asStringArray(vvData.deniedActions),
+          allowedOrigins: asStringArray(vvData.allowedOrigins),
           runtimePolicy:
             vvData.runtimePolicy && typeof vvData.runtimePolicy === 'object'
               ? vvData.runtimePolicy
@@ -290,7 +290,6 @@ export function buildRuntimeBundle(input) {
     delegation: delegation
       ? {
         controllerWallet: normalizeWallet(delegation.controllerWallet) || asString(delegation.controllerWallet),
-        scope: asString(delegation.scope) || undefined,
         allowedActions,
         deniedActions,
         runtimePolicy: delegation.runtimePolicy,

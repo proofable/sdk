@@ -1322,8 +1322,11 @@ export function getHostedAgentCreateUrl(opts = {}) {
   if (typeof opts.agentType === 'string' && opts.agentType.trim()) {
     url.searchParams.set('agentType', opts.agentType.trim().slice(0, 32));
   }
-  if (typeof opts.scope === 'string' && opts.scope.trim()) {
-    url.searchParams.set('scope', opts.scope.trim().slice(0, 128));
+  if (Array.isArray(opts.allowedPaymentTypes) && opts.allowedPaymentTypes.length > 0) {
+    url.searchParams.set(
+      'prefillAllowedPaymentTypes',
+      JSON.stringify(opts.allowedPaymentTypes.map(String).slice(0, 16))
+    );
   }
   if (opts.expiresAt !== undefined && opts.expiresAt !== null) {
     const expiresAt = Number(opts.expiresAt);
@@ -1348,12 +1351,6 @@ export function getHostedAgentCreateUrl(opts = {}) {
     url.searchParams.set('maxSpend', maxSpend);
   }
 
-  const permissions = Array.isArray(opts.permissions)
-    ? opts.permissions.map(String).map(value => value.trim()).filter(Boolean).slice(0, 32)
-    : [];
-  if (permissions.length > 0) {
-    url.searchParams.set('prefillDelegationDefaults', JSON.stringify({ permissions }));
-  }
   if (Array.isArray(opts.allowedActions) && opts.allowedActions.length > 0) {
     url.searchParams.set(
       'prefillAllowedActions',

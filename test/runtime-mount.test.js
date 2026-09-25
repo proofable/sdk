@@ -34,7 +34,7 @@ describe('runtime-mount', () => {
     controllerWallet: '0x2222222222222222222222222222222222222222',
     agentWallet: identity.agentWallet,
     agentId: identity.agentId,
-    scope: 'global',
+    allowedActions: ['read_context', 'read_proofs', 'execute_jobs'],
     deniedActions: ['send_message'],
     runtimePolicy: { requiresHumanApproval: true },
     approvalPolicy: {
@@ -140,7 +140,8 @@ describe('runtime-mount', () => {
       identity.agentWallet,
       identity.agentId
     );
-    expect(del?.scope).toBe('global');
+    expect(del?.agentId).toBe(identity.agentId);
+    expect(del?.allowedActions).toEqual(['read_context', 'read_proofs', 'execute_jobs']);
   });
 
   it('requests explicit proof content when the mount fallback reads identity records', async () => {

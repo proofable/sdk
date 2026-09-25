@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires @proofable/sdk (npm).
 metadata:
   author: Proofable
-  version: "0.1.1"
+  version: "0.1.2"
   homepage: https://docs.proofable.me/use-cases/gate-access
 ---
 

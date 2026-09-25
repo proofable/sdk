@@ -489,8 +489,8 @@ describe('Utils', () => {
           controllerWallet: '0x2222222222222222222222222222222222222222',
           identityQHash: `0x${'a'.repeat(64)}`,
           returnUrl: 'https://partner.example/callback',
-          scope: 'global',
           maxSpend: '15000000',
+          allowedPaymentTypes: ['x402'],
           allowedActions: ['read_context'],
           deniedActions: ['send_message'],
           runtimePolicy: { requiresHumanApproval: true }
@@ -498,8 +498,11 @@ describe('Utils', () => {
       );
 
       expect(url.searchParams.get('verifiers')).toBe('agent-delegation');
-      expect(url.searchParams.get('scope')).toBe('global');
+      expect(url.searchParams.get('scope')).toBe(null);
       expect(url.searchParams.get('maxSpend')).toBe('15000000');
+      expect(JSON.parse(url.searchParams.get('prefillAllowedPaymentTypes'))).toEqual([
+        'x402'
+      ]);
       expect(JSON.parse(url.searchParams.get('prefillAllowedActions'))).toEqual([
         'read_context'
       ]);
