@@ -30,7 +30,8 @@ jobs:
       - name: Published skills match proofable/mcp canonical skills
         run: node scripts/check-mcp-skill-parity.mjs
         env:
-          PROOFABLE_MCP_SKILLS_ROOT: ${{ github.workspace }}/mcp/skills      - run: npm ci
+          PROOFABLE_MCP_SKILLS_ROOT: ${{ github.workspace }}/mcp/skills
+      - run: npm ci
       - run: npm run lint
       - run: npm test --silent
       - run: npm run build
