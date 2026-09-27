@@ -1,133 +1,107 @@
-# Proofable SDK
+# Proofable MCP
 
-Add verification gates, reusable proof, and agent permissions to your app.
-
-[![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/%40proofable%2Fsdk)
+[![npm](https://img.shields.io/npm/v/%40proofable%2Fmcp?label=%40proofable%2Fmcp&color=98C0EF)](https://www.npmjs.com/package/@proofable/mcp)
+[![npm downloads](https://img.shields.io/npm/dm/%40proofable%2Fmcp?color=98C0EF)](https://www.npmjs.com/package/@proofable/mcp)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-Verify someone once. Check that proof forever after.
+Give AI access without giving up control.
 
-## Start here
-
-**Any MCP client**
+Add Proofable to any app, chat, or agent that speaks MCP.
 
 `https://mcp.proofable.me/mcp`
 
-**Install**
+## Install
 
-```bash
-npm install @proofable/sdk
+**[One-click install](https://proofable.me/install)** detects the MCP clients on your machine and writes the config for Cursor, VS Code, Claude Code, and Codex; `npx -y @proofable/sdk setup` covers anything else.
+
+Then finish sign-in in your client, and ask:
+
+```text
+Show my Proofable profile and current proofs.
 ```
 
-**Verify a person in three lines**
+### Claude Code
 
-```js
-import { getHostedCheckoutUrl } from '@proofable/sdk';
+In Claude Code, the repository is also a plugin marketplace:
 
-window.location.assign(getHostedCheckoutUrl({
-  verifiers: ['proof-of-human'],
-  returnUrl: 'https://app.example.com/auth/callback',
-}));
+```text
+/plugin marketplace add proofable/mcp
+/plugin install proofable-mcp@proofable
 ```
 
-They verify on Proofable, return with a proof ID (`qHash`), and every future decision reads that proof. No UI to build. No gate to define.
+Use either the plugin or a manual entry, not both. The Cursor plugin registers the endpoint; the Claude and Codex plugins ship the skills only, so register the server yourself there and sign in. The skills live in [`plugins/proofable-mcp`](./plugins/proofable-mcp).
 
-**Check the proof on your server**
+## Connect
 
-```js
-import { ProofableClient } from '@proofable/sdk';
+Two paths, one endpoint, one profile:
 
-const result = await new ProofableClient().gateCheck({
-  gate: [{ verifierId: 'proof-of-human' }],
-  subject: { accountId: user.accountAddress },
-});
+- **Interactive sign-in (OAuth):** add the hosted server, then let your client run its own browser sign-in. Best for interactive clients. Only Claude connectors and Devin show a control called Connect; elsewhere the client starts the sign-in itself.
+- **Server key:** best for servers, CI, and headless agents. Send it as a Bearer token.
 
-if (result.satisfied) {
-  // Allow the action.
+Any MCP client:
+
+```json
+{
+  "mcpServers": {
+    "proofable": { "type": "http", "url": "https://mcp.proofable.me/mcp" }
+  }
 }
 ```
 
-**Docs**
+Servers and automation:
 
-https://docs.proofable.me
-
-[SDK](https://docs.proofable.me/sdks/javascript) | [CLI](https://docs.proofable.me/sdks/cli) | [MCP](https://mcp.proofable.me/mcp) | [API](https://docs.proofable.me/api/overview) | [Examples](https://docs.proofable.me/use-cases/gate-access) | [Docs](https://docs.proofable.me)
-
-Requires Node.js 20 or later. Full CLI setup: `npx -y @proofable/sdk setup`.
-
-## When one check becomes a gate
-
-One check is not a gate. Reach for a gate when the decision needs several checks, a price, or a schedule.
-
-```js
-import { ProofableClient, defineGate } from '@proofable/sdk';
-
-const proofable = new ProofableClient();
-const gate = defineGate([
-  { verifierId: 'proof-of-human' },
-  { verifierId: 'ownership-dns-txt', match: { domain: 'acme.com' } },
-]);
-
-const result = await proofable.gateCheck({ gate, subject });
+```json
+{
+  "mcpServers": {
+    "proofable": {
+      "type": "http",
+      "url": "https://mcp.proofable.me/mcp",
+      "headers": { "Authorization": "Bearer ${PROOFABLE_ACCESS_KEY}" }
+    }
+  }
+}
 ```
 
-A published `gateId` is optional and only for a persisted listing, price, or schedule. Never ship access keys in browser code.
+Create a key at [Access keys](https://proofable.me/profile?tab=account), then `export PROOFABLE_ACCESS_KEY=npk_...` in that environment.
 
-## Gate a React page
-
-```jsx
-import { VerifyGate } from '@proofable/sdk/widgets';
-
-<VerifyGate gate={[{ verifierId: 'proof-of-human' }]} onVerified={grantAccess} />;
-```
-
-## Connect an editor or agent host
-
-Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a server key as a Bearer token from `PROOFABLE_ACCESS_KEY`.
+Or let the installer write the same entry for any tool:
 
 ```bash
 npx -y @proofable/sdk setup
-npx -y @proofable/sdk setup --access-key $PROOFABLE_ACCESS_KEY
-npx -y @proofable/sdk mount <agentId> --apply <host>
-npx -y @proofable/sdk doctor --live
 ```
 
-`--apply` accepts `cursor`, `claude`, `codex`, `hermes`, `openclaw`, or `opencode`. VS Code uses `--apply cursor`. Setup steps: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup).
+Then ask: "Show my Proofable profile and current proofs."
 
-## Core methods
+## What it does
 
-| Method | Use it for |
-| ------ | ---------- |
-| `getHostedCheckoutUrl()` | Send a user to Hosted Verify |
-| `client.verify()` | Create a proof (in-app signing) |
-| `client.verifyFromApp()` | Create a proof for an approved user (server; needs appId + origin) |
-| `client.getProof()` | Fetch a public proof by its proof ID (`qHash`) |
-| `client.getPrivateProof()` | Fetch a private proof (wallet-bound) |
-| `client.pollProofStatus()` | Wait for async verification completion |
-| `client.getProofsByWallet()` | List a wallet's public proofs |
-| `client.getPrivateProofsByWallet()` | List a wallet's private proofs |
-| `client.gateCheck()` | Server-side eligibility check before access |
-| `client.checkGate()` | Local preview against already-loaded proofs |
-| `client.getGate()` | Read a published gate's requirements and charge |
-| `client.fulfillGate()` | Deliver a post-verify reward for hosted checkout |
-| `client.createGatePrivateAuth()` | Signed proof for private gate access |
-| `client.revokeOwnProof()` | Revoke a proof you own |
-| `client.createWalletLinkData()` | Wallet-link payloads |
-| `client.getVerifiers()` | List live verifier ids |
-| `client.getVerifierCatalog()` | Full verifier catalog with access levels |
-| `client.isHealthy()` | Ping the API health endpoint |
+| Job | Tools |
+|---|---|
+| Load the signed-in profile and workflow | `proofable_context` (call first) |
+| Check, reuse, or create proof | `proofable_proofs_check`, `proofable_verify_or_guide`, `proofable_verify`, `proofable_proofs_get`, `proofable_proofs_update`, `proofable_verifiers_catalog` |
+| Give agents an owner and permissions | `proofable_agent_link`, `proofable_agent_create`, `proofable_agent_mount` |
+| Store secrets without exposing them | `proofable_secret_create`, `proofable_secret_list`, `proofable_secret_revoke` |
+
+Full reference: [docs.proofable.me/mcp/tools](https://docs.proofable.me/mcp/tools).
+
+## Authentication
+
+Two paths, one session model: interactive clients let their client run browser sign-in (OAuth, PKCE, silent refresh); servers and CI send a server key (`npk_...`) as a Bearer token from `PROOFABLE_ACCESS_KEY`. Same endpoint, same Proofable profile, same tools and policy. Never put a key in client config or chat when the client can sign in for you. See [Auth](https://docs.proofable.me/mcp/auth).
+
+## This package
+
+`@proofable/mcp` publishes the registry manifest (`server.json`) and the public skills. It does not run a local server. To build an app against Proofable, start from [github.com/proofable/sdk](https://github.com/proofable/sdk).
 
 ```js
-import { ProofableClient } from '@proofable/sdk';
-
-const client = new ProofableClient({
-  apiUrl: 'https://api.proofable.me',
-  timeout: 30000
-});
+import { serverManifest } from '@proofable/mcp';
 ```
 
-`appId` is optional public attribution for advanced server flows. Published gate checkout and `gateCheck({ gateId })` do not require it. `apiKey` (`npk_*`) is server-side only.
+The standards server card (`server.json`, `/.well-known/mcp/server-card.json`) stays OAuth-first.
 
-Issues: [github.com/proofable/sdk/issues](https://github.com/proofable/sdk/issues). Security: [SECURITY.md](./SECURITY.md). Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md).
+## Support
 
-Apache-2.0. Published by NEUS Network, Inc.
+- Docs: [docs.proofable.me/mcp/overview](https://docs.proofable.me/mcp/overview)
+- Issues: [github.com/proofable/mcp/issues](https://github.com/proofable/mcp/issues)
+- Security: [SECURITY.md](./SECURITY.md)
+- Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md)
+
+Apache-2.0. Proofable is published by NEUS Network, Inc.

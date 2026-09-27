@@ -11,11 +11,13 @@ Give AI agents verified identity, scoped permissions, and reusable proof through
 
 Add Proofable to any app, chat, or agent that speaks MCP. Cursor, Claude, Codex, and VS Code are shortcuts.
 
-Install Proofable, then click **Connect**:
+Add Proofable, then finish sign-in in your client:
 
 `https://mcp.proofable.me/mcp`
 
-If the host offers the Proofable plugin, install it and click **Connect** instead of adding the URL by hand. Do not add a second `proofable` entry.
+There is no universal Connect button. Cursor, VS Code, Claude Code, and Codex each run their own sign-in after the server is registered; only Claude connectors and Devin show a control called Connect.
+
+If the client offers the Proofable plugin, install that instead of adding the URL by hand. It ships these skills, and in Cursor it registers the server too. Do not add a second `proofable` entry.
 
 Have the CLI?
 
@@ -23,7 +25,7 @@ Have the CLI?
 proofable setup
 ```
 
-After Connect, ask:
+After sign-in, ask:
 
 ```text
 Show my Proofable profile and current proofs.
