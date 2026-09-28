@@ -683,28 +683,7 @@ export async function signMessage({ provider, message, walletAddress, chain } = 
 }
 
 export function isTerminalStatus(status) {
-  if (!status || typeof status !== 'string') return false;
-
-  const successStates = [
-    'verified',
-    'verified_no_verifiers',
-    'verified_crosschain_propagated',
-    'partially_verified',
-    'verified_propagation_failed'
-  ];
-
-  const failureStates = [
-    'rejected',
-    'rejected_verifier_failure',
-    'rejected_zk_initiation_failure',
-    'error_processing_exception',
-    'error_initialization',
-    'error_storage_unavailable',
-    'error_storage_query',
-    'not_found'
-  ];
-
-  return successStates.includes(status) || failureStates.includes(status);
+  return isSuccessStatus(status) || isFailureStatus(status);
 }
 
 export function isSuccessStatus(status) {
