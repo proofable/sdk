@@ -107,6 +107,7 @@ export function ProofBadge({
   const style = {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap,
     textDecoration: 'none',
     padding: `${padY}px ${padX}px`,
@@ -120,7 +121,15 @@ export function ProofBadge({
     whiteSpace: 'nowrap',
     lineHeight: 1,
     cursor: 'pointer',
-    transition: 'opacity 0.15s ease'
+    transition: 'opacity 0.15s ease',
+    // WCAG 2.2 AA Target Size (Minimum). The `sm` pill computed to 16px tall
+    // (10px text x line-height 1, plus 2px padding and a 1px border per side), which
+    // is under the 24x24 CSS px minimum and is flagged as an axe `target-size`
+    // violation wherever two of these stack in a list. border-box keeps the pill at
+    // exactly 24px rather than growing it beyond what the rule requires.
+    minHeight: 24,
+    minWidth: 24,
+    boxSizing: 'border-box'
   };
 
   const handleClick = (e) => {
@@ -184,6 +193,7 @@ export function ProofablePillLink({
   const style = {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     textDecoration: 'none',
     padding: '2px 6px',
@@ -197,7 +207,12 @@ export function ProofablePillLink({
     whiteSpace: 'nowrap',
     lineHeight: 1,
     cursor: 'pointer',
-    transition: 'opacity 0.15s ease'
+    transition: 'opacity 0.15s ease',
+    // Same WCAG 2.2 AA Target Size floor as ProofBadge: the 16px `sm` pill is under
+    // the 24x24 CSS px minimum.
+    minHeight: 24,
+    minWidth: 24,
+    boxSizing: 'border-box'
   };
 
   const handleClick = (e) => {
