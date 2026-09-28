@@ -422,14 +422,42 @@ describe('proofable CLI', () => {
     expect(payload.accessKeyConfigured).toBe(false);
     expect(payload.authRequired).toBe(true);
     expect(payload.nextCommand).toBeNull();
-    expect(payload.hostSignInHint).toContain('Logout');
-    expect(payload.hostSignInHint).toContain('Connect');
+    // Cursor renders no Connect button, so the hint must not name one.
+    expect(payload.hostSignInHint).not.toMatch(/click\s+connect/i);
+    expect(payload.hostSignInHint).toMatch(/sign-in/i);
     expect(payload.hostSignInHint).not.toContain('Do not run proofable auth');
 
     const cursorConfig = JSON.parse(
       await fs.readFile(path.join(context.homeDir, '.cursor', 'mcp.json'), 'utf8')
     );
     expect(cursorConfig.mcpServers.proofable.headers?.Authorization).toBeUndefined();
+  });
+
+  it('prefers silent refresh over logout when a stored refresh token exists', async () => {
+    const context = await makeCliContext();
+    // A prior `auth --oauth` leaves a rotating refresh token behind.
+    await fs.mkdir(path.join(context.homeDir, '.proofable'), { recursive: true });
+    await fs.writeFile(
+      path.join(context.homeDir, '.proofable', 'mcp-tokens.json'),
+      JSON.stringify({
+        accessToken: 'expired-access-token',
+        refreshToken: 'rt_stored_rotating_token',
+        expiresAt: Date.now() - 1000,
+        clientId: 'proofable-cli',
+        resource: 'https://mcp.proofable.me/mcp',
+      }),
+      'utf8',
+    );
+
+    const { stdout } = await runCli(['setup', '--client', 'cursor', '--json'], context);
+    const payload = JSON.parse(stdout);
+
+    // Reconnection is one command that reuses the saved token, not a full
+    // browser re-consent, and it never names a control the client lacks.
+    expect(payload.authRequired).toBe(true);
+    expect(payload.nextCommand).toBe('npx -y @proofable/sdk refresh');
+    expect(payload.hostSignInHint).toContain('refresh');
+    expect(payload.hostSignInHint).not.toMatch(/click\s+connect/i);
   });
 
   it('applies PROOFABLE_ACCESS_KEY from the shell on setup', async () => {
@@ -586,13 +614,15 @@ describe('proofable CLI', () => {
     expect(payload.prompts).toHaveLength(6);
   });
 
-  it('tells host-connect clients to Logout then Connect instead of proofable auth', async () => {
+  it('points host-connect clients at their own sign-in instead of a Connect control', async () => {
     const context = await makeCliContext();
 
     const { stderr } = await runCli(['setup', '--client', 'cursor'], context);
 
-    expect(stderr).toContain('Logout');
-    expect(stderr).toContain('Connect');
+    // Cursor has no Connect button, so the hint describes the client's own
+    // sign-in rather than naming a control that does not exist.
+    expect(stderr).not.toMatch(/click\s+connect/i);
+    expect(stderr).toMatch(/sign-in/i);
     expect(stderr).not.toContain('Do not run proofable auth');
     expect(stderr).not.toContain('or click Connect in your host');
   });
@@ -605,7 +635,9 @@ describe('proofable CLI', () => {
 
     expect(stderr).toBe('');
     expect(payload.authMethod).toBe('host-oauth');
-    expect(payload.hostSignInHint).toContain('Connect');
+    // Cursor renders no Connect button; the hint must describe the sign-in.
+    expect(payload.hostSignInHint).not.toMatch(/click\s+connect/i);
+    expect(payload.hostSignInHint).toMatch(/sign-in/i);
     expect(payload.hostSignInHint).not.toContain('Do not run proofable auth');
     expect(payload.results[0].authConfigured).toBe(false);
 

@@ -4,13 +4,15 @@ Load this file only when the user needs install, sign-in, access keys, or projec
 
 ## Install
 
-Install Proofable on this host, then click **Connect**:
+Install Proofable on this host, then finish sign-in in the client itself:
 
 `https://mcp.proofable.me/mcp`
 
-If the host already has a Proofable plugin, use that Connect path. Do not also write a second `proofable` entry.
+There is no universal Connect button. Cursor, VS Code, Claude Code, and Codex each run their own sign-in once the server is registered; only Claude connectors and Devin render a control named Connect.
 
-If Connect is missing, use the host’s own MCP login after the URL is registered.
+If the host already has a Proofable plugin, use the plugin path. Do not also write a second `proofable` entry.
+
+If the client shows no sign-in, use its own MCP login command after the URL is registered.
 
 Have the CLI?
 
@@ -28,7 +30,7 @@ Create access keys under **Account → Access keys** on [proofable.me](https://p
 
 Hosted MCP: **`https://mcp.proofable.me/mcp`**
 
-After Connect, call `proofable_context`. To sell: set payouts at https://proofable.me/profile?tab=credits, then create a listing at https://proofable.me/profile/portals/new. Full page: https://docs.proofable.me/mcp/setup
+After sign-in, call `proofable_context`. To sell: set payouts at https://proofable.me/profile?tab=credits, then create a listing at https://proofable.me/profile/portals/new. Full page: https://docs.proofable.me/mcp/setup
 
 ## Connect an agent to a project
 
@@ -44,4 +46,4 @@ proofable mount <agentId> --apply <host>
 | **Project** | `proofable mount <agentId> --apply <host>` |
 | **Session** | `proofable_context` → `proofable_agent_mount` when acting as the agent |
 
-Use `proofable mount` only when acting as a registered profile agent. For proofs and secrets, Connect plus `proofable_context` is enough.
+Use `proofable mount` only when acting as a registered profile agent. For proofs and secrets, a completed sign-in plus `proofable_context` is enough.

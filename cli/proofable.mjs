@@ -323,9 +323,25 @@ function hostConnectHint(clients) {
     };
   }
   if (hostClients.length) {
+    // Refresh-first: a stored refresh token rotates the access token in place,
+    // with no browser round trip. Logout → Connect re-runs the full consent flow
+    // and should be the last resort, not the first instruction. Refresh tokens
+    // rotate on use and last 30 days; the host's own OAuth is the primary path,
+    // this is the recovery path when the host silently stops refreshing.
+    const stored = readTokenStore();
+    if (stored?.refreshToken) {
+      return {
+        hint:
+          'Session dropped? Run `npx -y @proofable/sdk refresh` to reconnect with the saved token, then retry. If the host still shows Logout and Unauthorized, sign out in the host, then start the sign-in again.' +
+          (hasCodex ? codexHint : ''),
+        nextCommand: 'npx -y @proofable/sdk refresh'
+      };
+    }
     return {
       hint:
-        'Click Connect on proofable in the host MCP panel. If the host shows Logout and Unauthorized, click Logout, then Connect.' +
+        // Not every host renders a control called "Connect" — Cursor, VS Code,
+        // Claude Code and Codex do not. Describe the step, not a button name.
+        'Start the sign-in for proofable in the host MCP panel. If the host shows Logout and Unauthorized, sign out, then start it again.' +
         (hasCodex ? codexHint : ''),
       nextCommand: null
     };

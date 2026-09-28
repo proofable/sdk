@@ -27,6 +27,12 @@
       "import": "./errors.js",
       "require": "./cjs/errors.cjs"
     },
+    "./mcp-hosts": {
+      "import": "./mcp-hosts.js"
+    },
+    "./mcp-install-paths": {
+      "import": "./mcp-install-paths.js"
+    },
     "./gates": {
       "import": "./gates.js",
       "require": "./cjs/gates.cjs"
@@ -150,6 +156,7 @@
     "skills/**",
     "cli-commands.js",
     "mcp-hosts.js",
+    "mcp-install-paths.js",
     "index.js",
     "client.js",
     "utils.js",
