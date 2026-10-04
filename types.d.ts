@@ -1176,6 +1176,7 @@ declare module '@proofable/sdk/widgets' {
     proof?: any;
     showChains?: boolean;
     showLabel?: boolean;
+    label?: string;
     logoUrl?: string;
     onClick?: (data: { qHash: string; status: string; chainCount?: number }) => void;
     className?: string;

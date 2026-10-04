@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { PROOFABLE_DEFAULT_MARK_URL } from '../../brand-mark.js';
+import { isSuccessStatus } from '@proofable/sdk/utils';
 
 const DEFAULT_API_BASE = 'https://api.proofable.me';
 
@@ -38,76 +39,55 @@ export function ProofBadge({
   proof = undefined,
   showChains = false,
   showLabel = true,
+  label: verifiedLabel = 'Verified',
   logoUrl = undefined,
   onClick = undefined,
   className = ''
 }) {
-  const resolvedQHash = qHash;
-  const [status, setStatus] = useState(() => {
-    if (proof) {
-      const proofStatus = proof.status || '';
-      return proofStatus.includes('verified') ? 'verified' :
-        proofStatus.includes('pending') || proofStatus.includes('processing') ? 'pending' : 'failed';
-    }
-    return resolvedQHash ? 'pending' : 'unknown';
-  });
-
-  const [chainCount, setChainCount] = useState(() => {
-    if (proof?.crosschain) {
-      const total = proof.crosschain.totalChains || 0;
-      const relayResults = proof.crosschain.relayResults || {};
-      return total > 0 ? total : Object.keys(relayResults).length + (proof.crosschain.hubTxHash ? 1 : 0);
-    }
-    return 0;
-  });
+  const resolvedQHash = qHash ?? proof?.qHash;
+  const [loaded, setLoaded] = useState(null);
+  const currentLoad = loaded?.qHash === resolvedQHash && loaded?.apiUrl === apiUrl ? loaded : null;
+  const record = proof ?? currentLoad?.proof;
+  const proofStatus = String(record?.status ?? '').trim().toLowerCase();
+  const status = record
+    ? record.revokedAt || record.hidden === true
+      ? 'failed'
+      : isSuccessStatus(proofStatus)
+        ? 'verified'
+        : proofStatus.startsWith('pending') || proofStatus.startsWith('processing')
+          ? 'pending'
+          : proofStatus ? 'failed' : 'unknown'
+    : !resolvedQHash
+      ? 'unknown'
+      : !isValidQHash(resolvedQHash) || currentLoad ? 'failed' : 'pending';
+  const crosschain = record?.crosschain;
+  const chainCount = crosschain
+    ? crosschain.totalChains || Object.keys(crosschain.relayResults || {}).length + (crosschain.hubTxHash ? 1 : 0)
+    : 0;
 
   useEffect(() => {
-    if (!resolvedQHash || proof) return;
+    if (!isValidQHash(resolvedQHash) || proof) return;
 
     let cancelled = false;
 
     async function checkStatus() {
-      if (!isValidQHash(resolvedQHash)) {
-        if (!cancelled) setStatus('failed');
-        return;
-      }
       try {
         const res = await fetch(`${apiUrl}/api/v1/proofs/${resolvedQHash}`, {
           headers: { Accept: 'application/json' }
         });
 
-        if (!res.ok) {
-          if (!cancelled) setStatus('failed');
-          return;
-        }
-
-        const json = await res.json();
+        const json = res.ok ? await res.json() : null;
         if (cancelled) return;
-
-        const proofStatus = json?.data?.status || '';
-        const isVerified = proofStatus.toLowerCase().includes('verified');
-        const isPending = proofStatus.toLowerCase().includes('processing') ||
-                          proofStatus.toLowerCase().includes('pending');
-
-        setStatus(isVerified ? 'verified' : isPending ? 'pending' : 'failed');
-
-        if (showChains && json?.data?.crosschain) {
-          const cc = json.data.crosschain;
-          const total = cc.totalChains || 0;
-          const relayResults = cc.relayResults || {};
-          const count = total > 0 ? total : Object.keys(relayResults).length + (cc.hubTxHash ? 1 : 0);
-          setChainCount(count);
-        }
-
+        setLoaded({ qHash: resolvedQHash, apiUrl, proof: json?.data ?? null });
       } catch (_) {
-        if (!cancelled) setStatus('failed');
+        if (!cancelled) setLoaded({ qHash: resolvedQHash, apiUrl, proof: null });
       }
     }
 
     checkStatus();
 
     return () => { cancelled = true; };
-  }, [resolvedQHash, proof, apiUrl, showChains]);
+  }, [resolvedQHash, proof, apiUrl]);
 
   const base = String(uiLinkBase).replace(/\/$/, '');
   const href = isValidQHash(resolvedQHash)
@@ -121,12 +101,13 @@ export function ProofBadge({
   const padY = isSm ? 2 : 3;
   const padX = isSm ? 6 : 8;
 
-  const label = status === 'verified' ? 'Verified' :
+  const label = status === 'verified' ? verifiedLabel :
     status === 'pending' ? 'Pending' : status === 'unknown' ? 'Unknown' : 'Unverified';
 
   const style = {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap,
     textDecoration: 'none',
     padding: `${padY}px ${padX}px`,
@@ -140,7 +121,15 @@ export function ProofBadge({
     whiteSpace: 'nowrap',
     lineHeight: 1,
     cursor: 'pointer',
-    transition: 'opacity 0.15s ease'
+    transition: 'opacity 0.15s ease',
+    // WCAG 2.2 AA Target Size (Minimum). The `sm` pill computed to 16px tall
+    // (10px text x line-height 1, plus 2px padding and a 1px border per side), which
+    // is under the 24x24 CSS px minimum and is flagged as an axe `target-size`
+    // violation wherever two of these stack in a list. border-box keeps the pill at
+    // exactly 24px rather than growing it beyond what the rule requires.
+    minHeight: 24,
+    minWidth: 24,
+    boxSizing: 'border-box'
   };
 
   const handleClick = (e) => {
@@ -176,114 +165,9 @@ export function ProofBadge({
   );
 }
 
-export function SimpleProofBadge({
-  qHash,
-  proofUrlPattern = '/proof/:qHash',
-  uiLinkBase = 'https://proofable.me',
-  apiUrl = DEFAULT_API_BASE,
-  size = 'sm',
-  label = 'Verified',
-  logoUrl = undefined,
-  proof = undefined,
-  onClick = undefined,
-  className = ''
-}) {
-  const resolvedQHash = qHash;
-  const [status, setStatus] = useState(() => {
-    if (proof) {
-      const proofStatus = proof.status || '';
-      return proofStatus.includes('verified') ? 'verified' : 'failed';
-    }
-    return resolvedQHash ? 'pending' : 'unknown';
-  });
-
-  useEffect(() => {
-    if (!resolvedQHash || proof) return;
-
-    let cancelled = false;
-
-    async function checkStatus() {
-      if (!isValidQHash(resolvedQHash)) {
-        if (!cancelled) setStatus('failed');
-        return;
-      }
-      try {
-        const res = await fetch(`${apiUrl}/api/v1/proofs/${resolvedQHash}`, {
-          headers: { Accept: 'application/json' }
-        });
-
-        if (!res.ok) {
-          if (!cancelled) setStatus('failed');
-          return;
-        }
-
-        const json = await res.json();
-        if (cancelled) return;
-
-        const isVerified = json?.success === true ||
-                          json?.data?.status?.toLowerCase()?.includes('verified');
-        setStatus(isVerified ? 'verified' : 'failed');
-
-      } catch (_) {
-        if (!cancelled) setStatus('failed');
-      }
-    }
-
-    checkStatus();
-    return () => { cancelled = true; };
-  }, [resolvedQHash, proof, apiUrl]);
-
-  const base = String(uiLinkBase).replace(/\/$/, '');
-  const href = isValidQHash(resolvedQHash)
-    ? `${base}${String(proofUrlPattern).replace(':qHash', resolvedQHash)}`
-    : base;
-  const isSm = size === 'sm';
-  const logoSize = isSm ? 12 : 14;
-  const fontSize = isSm ? 10 : 11;
-
-  const style = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    textDecoration: 'none',
-    padding: '2px 6px',
-    borderRadius: 9999,
-    border: '1px solid var(--proofable-badge-border, rgba(148, 163, 184, 0.2))',
-    background: 'var(--proofable-badge-bg, transparent)',
-    color: 'var(--proofable-badge-text, #94a3b8)',
-    fontFamily: 'var(--proofable-badge-font, inherit)',
-    fontWeight: 500,
-    fontSize,
-    whiteSpace: 'nowrap',
-    lineHeight: 1,
-    cursor: 'pointer',
-    transition: 'opacity 0.15s ease'
-  };
-
-  const handleClick = (e) => {
-    if (onClick) {
-      e.preventDefault();
-      onClick({ qHash: resolvedQHash, status });
-    }
-  };
-
-  const displayLabel = status === 'verified' ? label : status === 'pending' ? 'Pending' : status === 'unknown' ? 'Unknown' : 'Unverified';
-
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      style={style}
-      className={className}
-      aria-label={displayLabel}
-      title={displayLabel}
-      onClick={handleClick}
-    >
-      <ProofableLogo size={logoSize} logoUrl={logoUrl} />
-      <span>{displayLabel}</span>
-    </a>
-  );
+/** Retained public entry point; rendering and status belong to ProofBadge. */
+export function SimpleProofBadge(props) {
+  return <ProofBadge {...props} showLabel />;
 }
 
 export function ProofablePillLink({
@@ -309,6 +193,7 @@ export function ProofablePillLink({
   const style = {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     textDecoration: 'none',
     padding: '2px 6px',
@@ -322,7 +207,12 @@ export function ProofablePillLink({
     whiteSpace: 'nowrap',
     lineHeight: 1,
     cursor: 'pointer',
-    transition: 'opacity 0.15s ease'
+    transition: 'opacity 0.15s ease',
+    // Same WCAG 2.2 AA Target Size floor as ProofBadge: the 16px `sm` pill is under
+    // the 24x24 CSS px minimum.
+    minHeight: 24,
+    minWidth: 24,
+    boxSizing: 'border-box'
   };
 
   const handleClick = (e) => {
