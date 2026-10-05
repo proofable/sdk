@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires an MCP-capable client that can register a remote HTTP server.
 metadata:
   author: Proofable
-  version: "0.1.3"
+  version: "0.1.4"
   homepage: https://docs.proofable.me/mcp/setup
 ---
 
@@ -15,11 +15,11 @@ Give AI agents verified identity, scoped permissions, and reusable proof through
 
 Add Proofable to any app, chat, or agent that speaks MCP. Cursor, Claude, Codex, and VS Code are shortcuts.
 
-Add Proofable, then finish sign-in in your client:
+Add the sign-in endpoint, then finish sign-in in your client:
 
 `https://mcp.proofable.me/mcp`
 
-There is no universal Connect button. Cursor, VS Code, Claude Code, and Codex each run their own sign-in after the server is registered; only Claude connectors and Devin show a control called Connect.
+`https://mcp.proofable.me/mcp` answers the MCP handshake with a `401` challenge, which is what makes Cursor, VS Code, Claude Code, and Codex start their own DCR + PKCE sign-in. The same URL accepts a server key as a Bearer token. There is no universal Connect button; only Claude connectors and Devin show a control called Connect.
 
 If the client offers the Proofable plugin, install that instead of adding the URL by hand. It ships these skills, and in Cursor it registers the server too. Do not add a second `proofable` entry.
 
