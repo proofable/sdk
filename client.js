@@ -1145,7 +1145,7 @@ export class ProofableClient {
               throw new ConfigurationError(
                 'This wallet does not support personal_sign (EIP-191), which is required to sign proofs. ' +
                 'Please use a wallet that supports personal_sign (all major EVM wallets do). ' +
-                'NEUS never falls back to eth_sign for security reasons.'
+                'Proofable never falls back to eth_sign for security reasons.'
               );
             } else if (needsHex) {
               this._log('Retrying personal_sign with hex-encoded message');
