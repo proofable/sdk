@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   MCP_INSTALL_SHORTCUT_HOSTS,
   PROOFABLE_MCP_URL,
-  PROOFABLE_MCP_OAUTH_URL,
   buildAuthCommandForClient,
   buildCursorMcpConfig,
   buildCursorMcpInstallHref,
@@ -21,12 +20,10 @@ describe('mcp-hosts', () => {
   });
 
   it('builds Proofable HTTP MCP config', () => {
-    // OAuth (no key): the auth-first lane, so the host meets the 401 challenge.
     expect(buildMcpHttpConfig()).toEqual({
       type: 'http',
-      url: PROOFABLE_MCP_OAUTH_URL
+      url: PROOFABLE_MCP_URL
     });
-    // Static access key: the canonical resource endpoint stays the target.
     expect(buildMcpHttpConfig('npk_test')).toEqual({
       type: 'http',
       url: PROOFABLE_MCP_URL,
@@ -36,7 +33,7 @@ describe('mcp-hosts', () => {
 
   it('builds Cursor-native MCP config without type field', () => {
     expect(buildCursorMcpConfig()).toEqual({
-      url: PROOFABLE_MCP_OAUTH_URL
+      url: PROOFABLE_MCP_URL
     });
     expect(buildCursorMcpConfig('npk_test')).toEqual({
       url: PROOFABLE_MCP_URL,
@@ -44,14 +41,14 @@ describe('mcp-hosts', () => {
     });
     // OAuth JWT tokens must not be written as a static header.
     expect(buildCursorMcpConfig('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3AM9Hz8bpA5G2Fw')).toEqual({
-      url: PROOFABLE_MCP_OAUTH_URL
+      url: PROOFABLE_MCP_URL
     });
   });
 
   it('builds VS Code MCP config with type field', () => {
     expect(buildVsCodeMcpConfig()).toEqual({
       type: 'http',
-      url: PROOFABLE_MCP_OAUTH_URL
+      url: PROOFABLE_MCP_URL
     });
     expect(buildVsCodeMcpConfig('npk_test')).toEqual({
       type: 'http',
@@ -64,7 +61,7 @@ describe('mcp-hosts', () => {
     // No key: URL-only OAuth block — any host runs Connect + PKCE. Never a
     // header referencing an unset environment variable.
     expect(JSON.parse(buildGenericMcpJsonConfig())).toEqual({
-      mcpServers: { proofable: { type: 'http', url: PROOFABLE_MCP_OAUTH_URL } }
+      mcpServers: { proofable: { type: 'http', url: PROOFABLE_MCP_URL } }
     });
     expect(buildGenericMcpJsonConfig()).toBe(buildGenericMcpJsonConfigUrlOnly());
 
@@ -133,6 +130,6 @@ describe('mcp-hosts', () => {
     );
     const encoded = href.split('config=')[1];
     const json = Buffer.from(decodeURIComponent(encoded), 'base64').toString('utf8');
-    expect(JSON.parse(json)).toEqual({ url: PROOFABLE_MCP_OAUTH_URL });
+    expect(JSON.parse(json)).toEqual({ url: PROOFABLE_MCP_URL });
   });
 });

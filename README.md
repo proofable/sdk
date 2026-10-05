@@ -11,9 +11,7 @@ Verify someone once. Check that proof forever after.
 
 **Any MCP client**
 
-`https://mcp.proofable.me/mcp/oauth`
-
-`/mcp/oauth` is the sign-in endpoint: it answers the MCP handshake with a `401` challenge, so Cursor, VS Code, Claude Code, and Codex start their own OAuth. The bare `https://mcp.proofable.me/mcp` endpoint (RFC 8707 resource, used by `PROOFABLE_ACCESS_KEY` and directory discovery) connects anonymously with only the four-tool anonymous tier and never prompts.
+`https://mcp.proofable.me/mcp`
 
 **Install**
 
@@ -53,7 +51,7 @@ if (result.satisfied) {
 
 https://docs.proofable.me
 
-[SDK](https://docs.proofable.me/sdks/javascript) | [CLI](https://docs.proofable.me/sdks/cli) | [MCP](https://mcp.proofable.me/mcp/oauth) | [API](https://docs.proofable.me/api/overview) | [Examples](https://docs.proofable.me/use-cases/gate-access) | [Docs](https://docs.proofable.me)
+[SDK](https://docs.proofable.me/sdks/javascript) | [CLI](https://docs.proofable.me/sdks/cli) | [MCP](https://mcp.proofable.me/mcp) | [API](https://docs.proofable.me/api/overview) | [Examples](https://docs.proofable.me/use-cases/gate-access) | [Docs](https://docs.proofable.me)
 
 Requires Node.js 20 or later. Full CLI setup: `npx -y @proofable/sdk setup`.
 
@@ -85,7 +83,7 @@ import { VerifyGate } from '@proofable/sdk/widgets';
 
 ## Connect an editor or agent host
 
-Interactive clients add `https://mcp.proofable.me/mcp/oauth` and finish the sign-in their client opens. Servers and CI send a server key as a Bearer token to `https://mcp.proofable.me/mcp` from `PROOFABLE_ACCESS_KEY`.
+Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a server key as a Bearer token from `PROOFABLE_ACCESS_KEY`.
 
 ```bash
 npx -y @proofable/sdk setup

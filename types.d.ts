@@ -1513,7 +1513,6 @@ declare module '@proofable/sdk/runtime-adapters' {
 declare module '@proofable/sdk/mcp-hosts' {
   export const PROOFABLE_MCP_SERVER_NAME: string;
   export const PROOFABLE_MCP_URL: string;
-  export const PROOFABLE_MCP_OAUTH_URL: string;
   export const PROOFABLE_MCP_SETUP_DOCS_URL: string;
   export const MCP_INSTALL_CLIENTS: string[];
   export const MCP_INSTALL_SHORTCUT_HOSTS: string[];

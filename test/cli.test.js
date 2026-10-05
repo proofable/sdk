@@ -293,7 +293,7 @@ describe('proofable CLI', () => {
       await fs.readFile(path.join(context.homeDir, '.cursor', 'mcp.json'), 'utf8')
     );
     expect(cursorConfig.mcpServers.proofable).toEqual({
-      url: 'https://mcp.proofable.me/mcp/oauth'
+      url: 'https://mcp.proofable.me/mcp'
     });
 
     const vscodeConfig = JSON.parse(
@@ -301,18 +301,18 @@ describe('proofable CLI', () => {
     );
     expect(vscodeConfig.servers.proofable).toEqual({
       type: 'http',
-      url: 'https://mcp.proofable.me/mcp/oauth'
+      url: 'https://mcp.proofable.me/mcp'
     });
 
     const claudeState = JSON.parse(await fs.readFile(context.claudeStatePath, 'utf8'));
     expect(claudeState.servers.proofable.scope).toBe('user');
     expect(claudeState.servers.proofable.transport).toBe('http');
-    expect(claudeState.servers.proofable.commandOrUrl).toBe('https://mcp.proofable.me/mcp/oauth');
+    expect(claudeState.servers.proofable.commandOrUrl).toBe('https://mcp.proofable.me/mcp');
     expect(claudeState.servers.proofable.headers).toEqual([]);
 
     const codexState = JSON.parse(await fs.readFile(context.codexStatePath, 'utf8'));
     expect(codexState.servers.proofable).toEqual({
-      url: 'https://mcp.proofable.me/mcp/oauth',
+      url: 'https://mcp.proofable.me/mcp',
       bearerTokenEnvVar: null,
       oauthClientId: null,
       oauthResource: null
@@ -339,7 +339,7 @@ describe('proofable CLI', () => {
     });
 
     const codexState = JSON.parse(await fs.readFile(context.codexStatePath, 'utf8'));
-    expect(codexState.servers.proofable.url).toBe('https://mcp.proofable.me/mcp/oauth');
+    expect(codexState.servers.proofable.url).toBe('https://mcp.proofable.me/mcp');
     expect(codexState.servers.proofable.oauthClientId).toBeNull();
     expect(codexState.servers.proofable.oauthResource).toBeNull();
   });
@@ -594,7 +594,7 @@ describe('proofable CLI', () => {
     const cursorConfig = JSON.parse(
       await fs.readFile(path.join(context.homeDir, '.cursor', 'mcp.json'), 'utf8')
     );
-    expect(cursorConfig.mcpServers.proofable.url).toBe('https://mcp.proofable.me/mcp/oauth');
+    expect(cursorConfig.mcpServers.proofable.url).toBe('https://mcp.proofable.me/mcp');
   }, 30000);
 
   it('exits non-zero for unknown subcommand', async () => {
@@ -645,7 +645,7 @@ describe('proofable CLI', () => {
       await fs.readFile(path.join(context.homeDir, '.cursor', 'mcp.json'), 'utf8')
     );
     expect(cursorConfig.mcpServers.proofable).toEqual({
-      url: 'https://mcp.proofable.me/mcp/oauth'
+      url: 'https://mcp.proofable.me/mcp'
     });
   });
 

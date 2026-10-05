@@ -31,33 +31,7 @@ export const PROOFABLE_MCP_SERVER_NAME = 'proofable';
 export const MCP_SERVER_KEYS = [PROOFABLE_MCP_SERVER_NAME];
 /** Keys removed during setup/disconnect so an old user entry cannot shadow the plugin. */
 export const MCP_SERVER_CLEANUP_KEYS = [PROOFABLE_MCP_SERVER_NAME, 'neus'];
-/** Canonical MCP resource (RFC 8707 audience) and anonymous/discovery endpoint. */
 export const PROOFABLE_MCP_URL = 'https://mcp.proofable.me/mcp';
-/**
- * Auth-first lane interactive hosts register. Without a credential even
- * `initialize` answers `401 + WWW-Authenticate`, which is the challenge that
- * starts the host's own OAuth (DCR + PKCE). The bare `/mcp` endpoint connects
- * anonymously with only the anonymous tier, so the host never prompts.
- */
-export const PROOFABLE_MCP_OAUTH_URL = 'https://mcp.proofable.me/mcp/oauth';
-
-/**
- * Endpoint for a given auth method.
- *
- * OAuth is host-owned: the client must meet the `401 + WWW-Authenticate`
- * challenge on the handshake, which only the auth-first lane sends — so an
- * OAuth (keyless) config points at `/mcp/oauth`.
- *
- * A static `npk_…` access key is written as a Bearer header and must keep the
- * canonical resource endpoint (the RFC 8707 audience). The auth-first lane is
- * for interactive sign-in only.
- *
- * @param {string} key normalized access key, '' for OAuth
- * @returns {string}
- */
-function mcpUrlForAuth(key) {
-  return key ? PROOFABLE_MCP_URL : PROOFABLE_MCP_OAUTH_URL;
-}
 export const PROOFABLE_MCP_SETUP_DOCS_URL = 'https://docs.proofable.me/mcp/setup';
 
 /** CLI `proofable setup --client` values. */
@@ -140,7 +114,7 @@ export function buildMcpHttpConfig(accessKey) {
   const key = normalizeAccessKey(accessKey);
   return {
     type: 'http',
-    url: mcpUrlForAuth(key),
+    url: PROOFABLE_MCP_URL,
     ...(key ? { headers: { Authorization: `Bearer ${key}` } } : {})
   };
 }
@@ -159,7 +133,7 @@ export function buildMcpHttpConfig(accessKey) {
 export function buildCursorMcpConfig(accessKey) {
   const key = normalizeAccessKey(accessKey);
   return {
-    url: mcpUrlForAuth(key),
+    url: PROOFABLE_MCP_URL,
     ...(key ? { headers: { Authorization: `Bearer ${key}` } } : {})
   };
 }
@@ -202,9 +176,6 @@ export function buildGenericMcpJsonConfig(accessKey, options = {}) {
         mcpServers: {
           [PROOFABLE_MCP_SERVER_NAME]: {
             type: 'http',
-            // Server/CI intent with an access key: the bare resource endpoint.
-            // The key is sent as a static Bearer header, so no OAuth challenge is
-            // needed and the canonical RFC 8707 audience stays the natural target.
             url: PROOFABLE_MCP_URL,
             headers: { Authorization: 'Bearer ${PROOFABLE_ACCESS_KEY}' }
           }
@@ -223,10 +194,10 @@ export function buildGenericMcpJsonConfig(accessKey, options = {}) {
   );
 }
 
-/** URL-only OAuth block: any host runs Connect + PKCE on the auth-first lane. */
+/** URL-only OAuth block: any host runs Connect + PKCE on the canonical endpoint. */
 export function buildGenericMcpJsonConfigUrlOnly() {
   return JSON.stringify(
-    { mcpServers: { [PROOFABLE_MCP_SERVER_NAME]: { type: 'http', url: PROOFABLE_MCP_OAUTH_URL } } },
+    { mcpServers: { [PROOFABLE_MCP_SERVER_NAME]: { type: 'http', url: PROOFABLE_MCP_URL } } },
     null,
     2
   );

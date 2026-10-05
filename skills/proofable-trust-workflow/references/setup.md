@@ -6,9 +6,9 @@ Load this file only when the user needs install, sign-in, access keys, or projec
 
 Install Proofable on this host, then finish sign-in in the client itself:
 
-`https://mcp.proofable.me/mcp/oauth`
+`https://mcp.proofable.me/mcp`
 
-`/mcp/oauth` answers the handshake with a `401` challenge and starts the host's own DCR + PKCE sign-in. The bare `https://mcp.proofable.me/mcp` endpoint connects anonymously with only the four-tool anonymous tier, so the host never prompts. There is no universal Connect button; only Claude connectors and Devin render a control named Connect.
+There is no universal Connect button. Cursor, VS Code, Claude Code, and Codex each run their own sign-in once the server is registered; only Claude connectors and Devin render a control named Connect.
 
 If the host already has a Proofable plugin, use the plugin path. Do not also write a second `proofable` entry.
 
@@ -28,7 +28,7 @@ proofable setup --access-key <npk_...>
 
 Create access keys under **Account → Access keys** on [proofable.me](https://proofable.me/profile?tab=account). Never paste keys into chat or committed files.
 
-Hosted MCP sign-in: **`https://mcp.proofable.me/mcp/oauth`** (discovery/anonymous: `https://mcp.proofable.me/mcp`)
+Hosted MCP: **`https://mcp.proofable.me/mcp`**
 
 After sign-in, call `proofable_context`. To sell: set payouts at https://proofable.me/profile?tab=credits, then create a listing at https://proofable.me/profile/portals/new. Full page: https://docs.proofable.me/mcp/setup
 
