@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/changelog).
 
+## [Unreleased]
+
+### Fixed
+
+- Runtime action checks now deny delegated actions when the mounted permission proof has an empty or missing `allowedActions` list. Controller-owned mounts retain their existing behavior.
+
 ## [0.1.2] - 2026-09-24
 
 ### Changed

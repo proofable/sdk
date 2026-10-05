@@ -310,7 +310,7 @@ export function buildRuntimeBundle(input) {
     memoryRefs: Array.isArray(input.memoryRefs) ? input.memoryRefs : undefined,
     enforce: {
       deniedActions,
-      ...(allowedActions?.length ? { allowedActions } : {}),
+      ...(delegation ? { allowedActions } : {}),
       ...(requiresHumanApproval ? { requiresHumanApproval: true } : {}),
       ...(approvalPolicy ? { approvalPolicy } : {})
     },
@@ -586,7 +586,7 @@ export function evaluateMountFileHealth(manifest) {
 /**
  * Evaluate one host action against the current runtime-mount permission bundle.
  * Denies when identity or permission state is missing or expired. A denied action
- * always wins; a non-empty allowlist denies actions it does not include.
+ * always wins; delegated authority requires an explicit, non-empty allowlist.
  *
  * @param {import('./runtime-mount.js').RuntimeMountBundle | Record<string, unknown> | null | undefined} bundle
  * @param {string} action
@@ -623,6 +623,9 @@ export function evaluateRuntimeAction(bundle, action, options = {}) {
   }
 
   const allowedActions = asStringArray(bundle.enforce?.allowedActions).map(value => value.toLowerCase());
+  if (bundle.authority?.mode === 'delegated' && allowedActions.length === 0) {
+    return deny('ACTION_NOT_ALLOWED', `The current permission proof does not allow ${normalizedAction}.`);
+  }
   if (allowedActions.length > 0 && !allowedActions.includes(normalizedAction)) {
     return deny('ACTION_NOT_ALLOWED', `The current permission proof does not allow ${normalizedAction}.`);
   }

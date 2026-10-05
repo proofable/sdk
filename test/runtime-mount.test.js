@@ -405,6 +405,32 @@ describe('runtime-mount', () => {
       });
     });
 
+    it('grants no delegated actions when the allowlist is empty or absent', () => {
+      for (const allowedActions of [[], undefined]) {
+        const bundle = buildRuntimeBundle({
+          identity,
+          delegation: { ...delegation, allowedActions, deniedActions: [] }
+        });
+
+        expect(bundle.enforce.allowedActions).toEqual([]);
+        expect(evaluateRuntimeAction(bundle, 'send_message')).toMatchObject({
+          decision: 'denied',
+          allowed: false,
+          code: 'ACTION_NOT_ALLOWED'
+        });
+      }
+    });
+
+    it('preserves controller authority without a delegation allowlist', () => {
+      const bundle = buildRuntimeBundle({ identity, controllerWallet: identity.agentWallet });
+
+      expect(evaluateRuntimeAction(bundle, 'read_proofs')).toMatchObject({
+        decision: 'allowed',
+        allowed: true,
+        code: 'ACTION_ALLOWED'
+      });
+    });
+
     it('fails closed when permission state is missing or expired', () => {
       const identityOnly = buildRuntimeBundle({ identity });
       const expired = buildRuntimeBundle({
