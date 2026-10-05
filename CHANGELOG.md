@@ -9,9 +9,17 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-05
+
 ### Fixed
 
-- Runtime action checks now deny delegated actions when the mounted permission proof has an empty or missing `allowedActions` list. Controller-owned mounts retain their existing behavior.
+- **Delegated mounts fail closed without an allowlist.** `evaluateRuntimeAction` now denies a delegated action when the mounted permission proof has an empty or missing `allowedActions` list, and `buildRuntimeBundle` preserves a present-but-empty list instead of dropping it. Controller-owned mounts (no delegation) keep their existing behavior.
+
+### Upgrade
+
+```bash
+npm install @proofable/sdk@0.1.4
+```
 
 ## [0.1.2] - 2026-09-24
 
@@ -133,7 +141,8 @@ Media placeholders for this release line. Drop the finished files under docs/ima
 </update-image-0.1.0>
 -->
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/proofable/sdk/compare/v0.1.3...v0.1.4
 [0.1.2]: https://github.com/proofable/sdk/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/proofable/sdk/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/proofable/sdk/releases/tag/v0.1.0
