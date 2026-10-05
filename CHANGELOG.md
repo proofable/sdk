@@ -9,6 +9,10 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hosted MCP setup registers the auth-first lane.** `proofable setup` (and `proofable auth --client …`) now writes `https://mcp.proofable.me/mcp/oauth` for Cursor, Claude Code, Codex, and VS Code. The bare `https://mcp.proofable.me/mcp` endpoint answers the handshake `200` with only the anonymous four-tool tier and never sends `WWW-Authenticate`, so hosts connected anonymously and skipped sign-in. `/mcp/oauth` answers the handshake with `401 + WWW-Authenticate`, which starts host OAuth (DCR + PKCE). Access-key configs and directory discovery keep the canonical `/mcp` resource, and `proofable doctor` accepts either lane.
+
 ## [0.1.4] - 2026-10-05
 
 ### Fixed
@@ -68,7 +72,7 @@ First Proofable SDK and CLI release. The predecessor `@neus/sdk` 1.x releases re
 
 - **Library**. Hosted verification flows, reusable proof checks, server gate checks, React widgets, and agent permissions, implementing [CAIP-380 Portable Proof](https://docs.proofable.me/learn/standards/caip-380).
 - **CLI**. `proofable setup`, `proofable doctor --live`, `proofable auth`, and `proofable mount` for hosted MCP setup and agent context.
-- **`proofable setup`** support for hosted MCP clients. Cursor, Claude Code, Codex, and VS Code register `https://mcp.proofable.me/mcp` and sign in with hosted OAuth.
+- **`proofable setup`** registers the auth-first sign-in lane `https://mcp.proofable.me/mcp/oauth` for Cursor, Claude Code, Codex, and VS Code, so the host meets the `401 + WWW-Authenticate` challenge and starts hosted OAuth. The bare `https://mcp.proofable.me/mcp` endpoint remains for access-key server configs and directory discovery; `doctor` accepts either.
 - **Widgets**. `VerifyGate` and `ProofBadge` from `@proofable/sdk/widgets`.
 
 ### Changed

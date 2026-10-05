@@ -9,6 +9,7 @@ import {
   PROOFABLE_MCP_SERVER_NAME,
   MCP_SERVER_CLEANUP_KEYS,
   PROOFABLE_MCP_URL,
+  PROOFABLE_MCP_OAUTH_URL,
   IDE_HOST_LABELS,
   buildCursorMcpConfig,
   buildVsCodeMcpConfig,
@@ -1159,6 +1160,22 @@ function buildClaudeServer(accessKey) {
   return buildMcpHttpConfig(accessKey);
 }
 
+/**
+ * Is `url` a Proofable MCP registration?
+ *
+ * Accepts both lanes: the auth-first sign-in lane (`/mcp/oauth`) that
+ * interactive installs register, and the bare resource/discovery endpoint
+ * (`/mcp`) that server-key and directory installs keep. An entry is not
+ * "unconfigured" just because it predates the auth-first change.
+ *
+ * @param {unknown} url
+ * @returns {boolean}
+ */
+function isProofableMcpUrl(url) {
+  return typeof url === 'string'
+    && (url === PROOFABLE_MCP_URL || url === PROOFABLE_MCP_OAUTH_URL);
+}
+
 function cursorConfigPath(scope, cwd) {
   return scope === 'user'
     ? path.join(os.homedir(), '.cursor', 'mcp.json')
@@ -1345,7 +1362,7 @@ function installClaudeUser(scope, accessKey, dryRun, cwd) {
       '--scope',
       'user',
       PROOFABLE_MCP_SERVER_NAME,
-      PROOFABLE_MCP_URL
+      PROOFABLE_MCP_OAUTH_URL
     ];
     if (accessKey) {
       addArgs.push('--header', `Authorization: Bearer ${accessKey}`);
@@ -1406,7 +1423,7 @@ function installCodex(scope, accessKey, dryRun, cwd) {
     // `codex mcp login proofable`; do not pin `proofable-cli` (that is the CLI's own
     // loopback client, not a host client) and do NOT pin the resource
     // (Codex discovers it from the protected-resource metadata).
-    const addArgs = ['mcp', 'add', PROOFABLE_MCP_SERVER_NAME, '--url', PROOFABLE_MCP_URL];
+    const addArgs = ['mcp', 'add', PROOFABLE_MCP_SERVER_NAME, '--url', PROOFABLE_MCP_OAUTH_URL];
     if (bearerTokenEnvVar) {
       addArgs.push('--bearer-token-env-var', bearerTokenEnvVar);
     }
@@ -1486,7 +1503,7 @@ function inspectCursor(scope, cwd) {
   }
   const doc = readJsonFile(targetPath, {});
   const server = doc.mcpServers?.[PROOFABLE_MCP_SERVER_NAME];
-  const configured = Boolean(server && server.url === PROOFABLE_MCP_URL);
+  const configured = Boolean(server && isProofableMcpUrl(server.url));
   return {
     client: 'cursor',
     scope,
@@ -1516,7 +1533,7 @@ function inspectVsCode(scope, cwd) {
   return {
     client: 'vscode',
     scope,
-    configured: Boolean(server && server.url === PROOFABLE_MCP_URL),
+    configured: Boolean(server && isProofableMcpUrl(server.url)),
     authConfigured: Boolean(server?.headers?.Authorization),
     targetPath,
     error: null
@@ -1541,7 +1558,7 @@ function inspectClaude(scope, cwd) {
     return {
       client: 'claude',
       scope,
-      configured: Boolean(server && server.url === PROOFABLE_MCP_URL),
+      configured: Boolean(server && isProofableMcpUrl(server.url)),
       authConfigured: Boolean(server?.headers?.Authorization),
       targetPath,
       error: null
@@ -1599,7 +1616,10 @@ function inspectCodex(scope, cwd) {
   const result = runCommand('codex', ['mcp', 'get', PROOFABLE_MCP_SERVER_NAME], cwd, true, 10_000);
   const configured =
     result.status === 0 &&
-    result.stdout.split(/\r?\n/).some(line => line.trim() === `url: ${PROOFABLE_MCP_URL}`);
+    result.stdout.split(/\r?\n/).some(line => {
+      const trimmed = line.trim();
+      return trimmed === `url: ${PROOFABLE_MCP_URL}` || trimmed === `url: ${PROOFABLE_MCP_OAUTH_URL}`;
+    });
   return {
     client: 'codex',
     scope,
