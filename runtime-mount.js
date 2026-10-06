@@ -298,7 +298,6 @@ export function buildRuntimeBundle(input) {
         isExpired: Boolean(delegation.isExpired),
         maxSpend: delegation.maxSpend,
         instructions: asString(delegation.instructions) || undefined,
-        skills: Array.isArray(delegation.skills) ? delegation.skills : undefined,
         provider: asString(delegation.provider) || undefined,
         model: asString(delegation.model) || undefined
       }
