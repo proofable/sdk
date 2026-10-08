@@ -5,23 +5,19 @@ license: Apache-2.0
 compatibility: Requires an MCP-capable client that can register a remote HTTP server.
 metadata:
   author: Proofable
-  version: "0.1.4"
+  version: "0.1.5"
   homepage: https://docs.proofable.me/mcp/setup
 ---
 
 # Set up Proofable
 
-Give AI agents verified identity, scoped permissions, and reusable proof through one MCP.
+Give AI agents real access without giving up control.
 
-Add Proofable to any app, chat, or agent that speaks MCP. Cursor, Claude, Codex, and VS Code are shortcuts.
-
-Add the sign-in endpoint, then finish sign-in in your client:
+Add this hosted endpoint to your MCP client, then finish the sign-in it opens:
 
 `https://mcp.proofable.me/mcp`
 
-`https://mcp.proofable.me/mcp` answers the MCP handshake with a `401` challenge, which is what makes Cursor, VS Code, Claude Code, and Codex start their own DCR + PKCE sign-in. The same URL accepts a server key as a Bearer token. There is no universal Connect button; only Claude connectors and Devin show a control called Connect.
-
-If the client offers the Proofable plugin, install that instead of adding the URL by hand. It ships these skills, and in Cursor it registers the server too. Do not add a second `proofable` entry.
+If the client offers the Proofable plugin, install it instead of adding the URL by hand. Keep one Proofable connection per client.
 
 Have the CLI?
 
@@ -32,10 +28,16 @@ proofable setup
 After sign-in, ask:
 
 ```text
-Show my Proofable profile and current proofs.
+Show my Proofable profile and the proofs I can reuse.
 ```
 
-Do not fetch every proof as the first step. Summarize as Passed, Action needed, or Blocked.
+Call `proofable_context` once. Do not fetch every proof body. Summarize the result as Passed, Action needed, or Blocked.
+
+For a specific requirement, ask:
+
+```text
+Check whether I already have the proof needed for this task. Reuse it if it qualifies; otherwise show me the next step.
+```
 
 Then, if you need agents:
 
@@ -44,8 +46,6 @@ Show what my agents are allowed to do.
 ```
 
 The agent lives on the signed-in profile by default. Ask for a dedicated spend account only when the agent should pay from its own account. Open **Connections** on proofable.me to link apps.
-
-To sell: set payouts at https://proofable.me/profile?tab=credits, then create a listing at https://proofable.me/profile/portals/new.
 
 Full page: https://docs.proofable.me/mcp/setup
 
