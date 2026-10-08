@@ -237,6 +237,7 @@
       };
       options?: {
         enableIpfs?: boolean;
+        disclosePortableProof?: boolean;
         publicDisplay?: boolean;
         storeOriginalContent?: boolean;
         verifierOptions?: object;
@@ -250,6 +251,7 @@
       createdAt?: number;
       completedAt?: number;
       lastUpdated?: number;
+      portableProof?: Record<string, unknown>;
     };
   }
   
