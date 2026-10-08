@@ -1096,7 +1096,7 @@ function printUsage(exitCode = 0) {
     '  --project                Write shared project config instead of user config',
     '  --access-key <npk_...>   Override profile access key (else uses PROOFABLE_ACCESS_KEY if set)',
     '  --oauth                  Force browser OAuth (ignore PROOFABLE_ACCESS_KEY in the environment; stores the refresh token that `proofable refresh` uses)',
-    '  --live                   Run live MCP checks (uses IDE credential or --access-key)',
+    '  --live                   Run live MCP checks (uses your client credential or --access-key)',
     '  --agent <agentId>        Agent id for mount (also accepted positionally: `proofable mount <agentId>`)',
     '  --apply <cursor|claude|codex|hermes|openclaw|opencode>  Write mounted agent rules to the current project',
     '  --json                   Print JSON output',
