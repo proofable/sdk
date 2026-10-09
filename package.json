@@ -1,6 +1,6 @@
 {
   "name": "@proofable/sdk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "SDK and CLI for verification gates, reusable proof, and agent permissions.",
   "bin": {
     "proofable": "cli/proofable.mjs"

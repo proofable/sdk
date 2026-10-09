@@ -9,6 +9,19 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-09
+
+### Changed
+
+- **User-visible wallet error names Proofable, not NEUS.** The `personal_sign` failure message reads `Proofable never falls back to eth_sign for security reasons`, matching the product name.
+- **CLI help stops assuming an IDE.** `proofable --help` describes `--live` as using your client credential, not an IDE credential.
+- **The packaged skills match the canonical 0.1.6 set** from `proofable/mcp`, including the simplified setup flow and the finalized `identity, scoped access, and proof` line.
+
+### Fixed
+
+- **Portable proof fields survive the type contract.** `types.d.ts` declares `options.disclosePortableProof` and the `portableProof` result field so a TypeScript consumer can read and set the disclosed envelope instead of casting.
+- **The mounted runtime bundle no longer carries a dead `skills` field.** `buildRuntimeBundle` dropped `delegation.skills`; authority already travels as `allowedActions` minus `deniedActions`, and no consumer read the removed field.
+
 ## [0.1.4] - 2026-10-05
 
 ### Fixed
