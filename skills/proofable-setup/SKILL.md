@@ -11,7 +11,7 @@ metadata:
 
 # Set up Proofable
 
-Give AI agents real access without giving up control.
+Give AI agents identity, scoped access, and proof of every action.
 
 Add this hosted endpoint to your MCP client, then finish the sign-in it opens:
 
