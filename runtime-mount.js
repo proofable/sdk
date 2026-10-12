@@ -117,20 +117,11 @@ export function pickActiveDelegation(delegations, controllerWallet, agentWallet,
     const rowController = normalizeWallet(row.controllerWallet);
     if (agent && rowAgent && rowAgent !== agent) return false;
     if (controller && rowController && rowController !== controller) return false;
-    if (id && row.agentId && asString(row.agentId).toLowerCase() !== id) return false;
+    // Same rule as protocol enforcement: a named agent needs a row that names it.
+    if (id && asString(row.agentId).toLowerCase() !== id) return false;
     return true;
   });
   return candidates[0] || null;
-}
-
-/**
- * @param {Record<string, unknown> | null | undefined} identity
- * @param {Record<string, unknown> | null | undefined} delegation
- */
-export function resolveEffectiveRuntime(identity, delegation) {
-  void identity;
-  void delegation;
-  return null;
 }
 
 /**
@@ -211,9 +202,6 @@ export function buildRuntimeBundle(input) {
     throw new Error('Runtime mount requires verified agent identity (agentId, agentWallet, identityQHash).');
   }
 
-  // Runtime selection belongs to the execution resolver. Proof metadata is
-  // preserved for compatibility and display only.
-  const effectiveRuntime = resolveEffectiveRuntime(identity, delegation);
   const deniedActions = delegation ? asStringArray(delegation.deniedActions) : [];
   const allowedActions = delegation ? asStringArray(delegation.allowedActions) : undefined;
   const requiresHumanApproval =
@@ -302,7 +290,6 @@ export function buildRuntimeBundle(input) {
         model: asString(delegation.model) || undefined
       }
       : null,
-    effectiveRuntime,
     tools,
     resources,
     secretBindings,

@@ -144,7 +144,6 @@ export function bundleToCodexJson(bundle) {
       capabilities: bundle.identity.capabilities,
       skills: bundle.identity.skills,
       services: bundle.identity.services,
-      effectiveRuntime: bundle.effectiveRuntime,
       enforce: bundle.enforce,
       trust: bundle.trust,
       mountedAt: bundle.mountedAt

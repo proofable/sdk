@@ -1347,7 +1347,6 @@ declare module '@proofable/sdk/runtime-mount' {
       defaultRuntime?: { provider?: string; model?: string; mode?: string; origin?: 'hermes' | 'openclaw' | 'opencode' | 'cursor' | 'claude' | 'codex' | 'hosted' | 'other' };
     };
     delegation: Record<string, unknown> | null;
-    effectiveRuntime: { provider: string; model: string } | null;
     tools: unknown[];
     resources: unknown[];
     secretBindings: unknown[];
@@ -1445,10 +1444,6 @@ declare module '@proofable/sdk/runtime-mount' {
     agentWallet: string,
     agentId: string
   ): AgentDelegationRow | null;
-  export function resolveEffectiveRuntime(
-    identity: AgentIdentityRow | null,
-    delegation: AgentDelegationRow | null
-  ): { provider: string; model: string } | null;
   export function extractAgentContextFromProofs(proofs: unknown): AgentRoster;
   export function buildRuntimeBundle(input: {
     identity: AgentIdentityRow;

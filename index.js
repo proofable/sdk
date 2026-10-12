@@ -72,7 +72,6 @@ export {
   isDelegationExpired,
   pickIdentity,
   pickActiveDelegation,
-  resolveEffectiveRuntime,
   extractAgentContextFromProofs,
   buildRuntimeBundle,
   profileAgentToIdentitySeed,

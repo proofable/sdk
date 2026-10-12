@@ -6,7 +6,6 @@ import {
   pickActiveDelegation,
   pickIdentity,
   resolveRuntimeBundleFromMcp,
-  resolveEffectiveRuntime,
   RUNTIME_MOUNT_SCHEMA,
   evaluateMountFileHealth,
   evaluateRuntimeAction
@@ -57,7 +56,7 @@ describe('runtime-mount', () => {
       humanApprovalRequiredForNewClaims: true,
       preApprovedContentOnly: true
     });
-    expect(bundle.effectiveRuntime).toBeNull();
+    expect(bundle).not.toHaveProperty('effectiveRuntime');
     expect(bundle.authority.mode).toBe('delegated');
     expect(bundle.authority.controllerWallet).toBe(delegation.controllerWallet);
   });
@@ -121,12 +120,11 @@ describe('runtime-mount', () => {
   });
 
   it('never selects runtime from mount or proof metadata', () => {
-    expect(resolveEffectiveRuntime(identity, delegation)).toBeNull();
     expect(buildRuntimeBundle({
       identity,
       delegation,
       runtime: { provider: 'openai', model: 'gpt-5.5' }
-    }).effectiveRuntime).toBeNull();
+    })).not.toHaveProperty('effectiveRuntime');
   });
 
   it('picks identity and delegation by agentId', () => {
@@ -142,6 +140,11 @@ describe('runtime-mount', () => {
     );
     expect(del?.agentId).toBe(identity.agentId);
     expect(del?.allowedActions).toEqual(['read_context', 'read_proofs', 'execute_jobs']);
+  });
+
+  it('never hands a named agent an unscoped delegation row', () => {
+    const unscoped = { ...delegation, agentId: undefined };
+    expect(pickActiveDelegation([unscoped], delegation.controllerWallet, identity.agentWallet, identity.agentId)).toBeNull();
   });
 
   it('requests explicit proof content when the mount fallback reads identity records', async () => {
