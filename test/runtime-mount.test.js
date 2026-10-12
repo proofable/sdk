@@ -144,7 +144,13 @@ describe('runtime-mount', () => {
 
   it('never hands a named agent an unscoped delegation row', () => {
     const unscoped = { ...delegation, agentId: undefined };
-    expect(pickActiveDelegation([unscoped], delegation.controllerWallet, identity.agentWallet, identity.agentId)).toBeNull();
+    const selected = pickActiveDelegation(
+      [unscoped],
+      delegation.controllerWallet,
+      identity.agentWallet,
+      identity.agentId
+    );
+    expect(selected).toBeNull();
   });
 
   it('requests explicit proof content when the mount fallback reads identity records', async () => {

@@ -9,6 +9,14 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-12
+
+### Changed
+
+- **Runtime selection stays with the executing host.** Removed the unused `effectiveRuntime` field and resolver from mounted-agent bundles and the SDK surface.
+- **Delegation lookup fails closed for named agents.** A delegation without the requested `agentId` can no longer be selected for that agent.
+- **Packaged skills match MCP 0.1.7.** The SDK skills now include the external-signer prepare-and-submit flow and current version metadata.
+
 ## [0.1.5] - 2026-10-09
 
 ### Changed
