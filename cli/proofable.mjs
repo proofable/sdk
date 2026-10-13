@@ -60,6 +60,8 @@ const PROOFABLE_OAUTH_CLIENT_ID = 'proofable-cli';
 // parameter. Matches the `issuer` field in /.well-known/oauth-authorization-server.
 const PROOFABLE_OAUTH_ISSUER = 'https://proofable.me';
 const PROOFABLE_MCP_RESOURCE = 'https://mcp.proofable.me/mcp';
+// The one first message after connecting; README, docs, plugin, skills and llms.txt use the same words.
+const SHARED_FIRST_PROMPT = 'Show my Proofable profile and the proofs I can reuse.';
 
 function readTokenStore() {
   try {
@@ -292,9 +294,16 @@ function printBuilderGuidance(command, results) {
     writeGuidanceLine('Codex OAuth: `npx -y @proofable/sdk auth --client codex` or `codex mcp login proofable`.');
   }
   if (ok.length > 0) {
-    writeGuidanceLine(`Proofable MCP registered for ${ok.map(result => label(result.client)).join(', ')}.`);
+    const verb = results.some(result => result.dryRun) ? 'Would register Proofable MCP for' : 'Proofable MCP registered for';
+    writeGuidanceLine(`${verb} ${ok.map(result => label(result.client)).join(', ')}.`);
   }
-  writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
+  if (!commandExists('claude') && claudeAppInstalled()) {
+    writeGuidanceLine(
+      `Claude app: in Customize, then Connectors, add a custom connector with ${PROOFABLE_MCP_RESOURCE} and sign in.`
+    );
+    writeGuidanceLine('Claude Code: run `/plugin marketplace add proofable/mcp`, then `/plugin install proofable-mcp@proofable`.');
+  }
+  writeGuidanceLine(`Ask your assistant: "${SHARED_FIRST_PROMPT}"`);
 }
 
 function selectedClientNames(results) {
@@ -806,6 +815,18 @@ function runCommand(command, args, cwd, tolerateFailure = false, timeout = 30_00
 
 function commandExists(command) {
   return Boolean(resolveCommand(command));
+}
+
+/** Claude desktop or Claude Code config is present, whether or not the `claude` CLI is on PATH. */
+function claudeAppInstalled() {
+  const homeDir = os.homedir();
+  const appData = process.env.APPDATA || '';
+  return [
+    path.join(homeDir, '.claude.json'),
+    path.join(appData, 'Claude'),
+    path.join(homeDir, 'Library', 'Application Support', 'Claude'),
+    path.join(homeDir, '.config', 'Claude')
+  ].some(fileExists);
 }
 
 function cursorInstalled() {
@@ -1873,7 +1894,7 @@ async function runMount(options) {
     } else if (!options.dryRun) {
       logStep('ok', 'wrote', path.join(cwd, '.proofable', 'mount.json'));
     }
-    writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
+    writeGuidanceLine(`Ask your assistant: "${SHARED_FIRST_PROMPT}"`);
     writeCliLine('');
     return payload;
   } finally {
@@ -2554,7 +2575,7 @@ async function runSetup(options) {
   }
 
   printFlowSummary('setup', scope, initResults, {
-    nextStep: accessKey ? 'Ask your assistant: "Use Proofable before taking sensitive actions."' : '',
+    nextStep: accessKey ? `Ask your assistant: "${SHARED_FIRST_PROMPT}"` : '',
     cliOptions: options
   });
   writeCliLine(paint('Trust workflow skill', 'cyan'));
@@ -2603,6 +2624,7 @@ async function runSetup(options) {
 }
 
 const ASSISTANT_EXAMPLE_PROMPTS = [
+  SHARED_FIRST_PROMPT,
   'Use Proofable before taking sensitive actions.',
   'Check whether I already have the required proof.',
   'Verify this agent is trusted before it runs tools.',
@@ -2823,7 +2845,7 @@ async function runDoctor(options) {
           payload.mcp.proofsTotal != null ? `, ${payload.mcp.proofsTotal} proofs` : '';
         const tools = payload.mcp.toolsCount ? `, ${payload.mcp.toolsCount} tools available` : '';
         logStep('ok', 'profile', `connected${handle}${wallet}${receipts}${tools}`);
-        writeGuidanceLine('Ask your assistant: "Use Proofable before taking sensitive actions."');
+        writeGuidanceLine(`Ask your assistant: "${SHARED_FIRST_PROMPT}"`);
         writeGuidanceLine('Run `npx -y @proofable/sdk examples` for starter prompts.');
         if (payload.mountFilePresent) {
           const agentLabel = payload.mountAgentLabel || payload.mountAgentId || 'project mount';

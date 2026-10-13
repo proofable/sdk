@@ -373,7 +373,20 @@ describe('proofable CLI', () => {
     expect(stderr).toContain('@proofable/sdk auth --client codex');
     expect(stderr).toContain('npx -y @proofable/sdk');
     expect(stderr).toContain('@proofable/sdk examples');
-    expect(stderr).toContain('Use Proofable before taking sensitive actions');
+    expect(stderr).toContain('Show my Proofable profile and the proofs I can reuse.');
+    expect(stderr).not.toContain('Proofable MCP registered for');
+  });
+
+  it('names the Claude app and its connector path when Claude is installed without the claude CLI', async () => {
+    const context = await makeCliContext();
+    await fs.mkdir(path.join(context.appDataDir, 'Claude'), { recursive: true });
+    // No command resolver on PATH: the claude CLI is absent, as on a desktop-only machine.
+    const env = { ...context.env, PATH: path.join(context.homeDir, 'empty-bin') };
+
+    const { stderr } = await runCli(['setup', '--client', 'vscode', '--dry-run'], { ...context, env });
+
+    expect(stderr).toContain('Claude app: in Customize, then Connectors, add a custom connector with https://mcp.proofable.me/mcp');
+    expect(stderr).toContain('/plugin marketplace add proofable/mcp');
   });
 
   it('prints a readable profile connection summary in doctor output', async () => {
@@ -610,8 +623,9 @@ describe('proofable CLI', () => {
 
     expect(stderr).toBe('');
     expect(payload.command).toBe('examples');
+    expect(payload.prompts[0]).toBe('Show my Proofable profile and the proofs I can reuse.');
     expect(payload.prompts).toContain('Use Proofable before taking sensitive actions.');
-    expect(payload.prompts).toHaveLength(6);
+    expect(payload.prompts).toHaveLength(7);
   });
 
   it('points host-connect clients at their own sign-in instead of a Connect control', async () => {
