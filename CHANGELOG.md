@@ -13,8 +13,8 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ### Changed
 
-- **Runtime selection stays with the executing host.** Removed the unused `effectiveRuntime` field and resolver from mounted-agent bundles and the SDK surface.
-- **Delegation lookup fails closed for named agents.** A delegation without the requested `agentId` can no longer be selected for that agent.
+- **Runtime selection stays with the executing host.** Removed an unused runtime field and resolver from mounted agents and the SDK surface.
+- **A named agent uses only its own delegation.** A delegation that does not name the requested agent can no longer be applied to it.
 - **Packaged skills match MCP 0.1.7.** The SDK skills now include the external-signer prepare-and-submit flow and current version metadata.
 
 ## [0.1.5] - 2026-10-09
@@ -23,18 +23,18 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 - **User-visible wallet error names Proofable, not NEUS.** The `personal_sign` failure message reads `Proofable never falls back to eth_sign for security reasons`, matching the product name.
 - **CLI help stops assuming an IDE.** `proofable --help` describes `--live` as using your client credential, not an IDE credential.
-- **The packaged skills match the canonical 0.1.6 set** from `proofable/mcp`, including the simplified setup flow and the finalized `identity, scoped access, and proof` line.
+- **The packaged skills match the 0.1.6 set** from `proofable/mcp`, including the simplified setup flow and the finalized `identity, scoped access, and proof` line.
 
 ### Fixed
 
 - **Portable proof fields survive the type contract.** `types.d.ts` declares `options.disclosePortableProof` and the `portableProof` result field so a TypeScript consumer can read and set the disclosed envelope instead of casting.
-- **The mounted runtime bundle no longer carries a dead `skills` field.** `buildRuntimeBundle` dropped `delegation.skills`; authority already travels as `allowedActions` minus `deniedActions`, and no consumer read the removed field.
+- **A mounted agent no longer carries a dead skills field.** The bundle dropped `delegation.skills`; authority already travels as `allowedActions` minus `deniedActions`, and no consumer read the removed field.
 
 ## [0.1.4] - 2026-10-05
 
 ### Fixed
 
-- **Delegated mounts fail closed without an allowlist.** `evaluateRuntimeAction` now denies a delegated action when the mounted permission proof has an empty or missing `allowedActions` list, and `buildRuntimeBundle` preserves a present-but-empty list instead of dropping it. Controller-owned mounts (no delegation) keep their existing behavior.
+- **A delegated agent can only do what the permission lists.** A delegated action is denied when the mounted permission proof has an empty or missing `allowedActions` list, and a present-but-empty list is preserved instead of dropped. Mounts you own (no delegation) keep their existing behavior.
 
 ### Upgrade
 
@@ -46,7 +46,7 @@ npm install @proofable/sdk@0.1.4
 
 ### Changed
 
-- **Delegation authority follows the canonical action contract.** `getHostedAgentCreateUrl` and `verify` no longer accept or forward `scope` and `permissions`. Authority is `allowedActions` minus `deniedActions` only; spend delegations carry `allowedPaymentTypes` and `maxSpend`, and `allowedOrigins` bounds app-agent origins. Runtime mounts surface `allowedActions`/`deniedActions` without a scope string.
+- **Agent authority is listed explicitly.** `getHostedAgentCreateUrl` and `verify` no longer accept or forward `scope` and `permissions`. Authority is `allowedActions` minus `deniedActions` only; spend delegations carry `allowedPaymentTypes` and `maxSpend`, and `allowedOrigins` bounds app-agent origins. Runtime mounts surface `allowedActions`/`deniedActions` without a scope string.
 - **Trust guidance follows the hosted workflow.** The packaged trust-workflow skill and runtime-mount trust instructions use `proofable_verify_or_guide` first; `proofable_proofs_check` is only for an explicit yes/no eligibility, gate, or access question.
 - **The packaged `proofable-setup` skill ships with the SDK.** Published skills are generated from the canonical `proofable/mcp` `skills/` directory; CI verifies parity so the two packages can never publish different skill content.
 
