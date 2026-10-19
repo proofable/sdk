@@ -48,7 +48,7 @@ npm install @proofable/sdk@0.1.4
 
 - **Agent authority is listed explicitly.** `getHostedAgentCreateUrl` and `verify` no longer accept or forward `scope` and `permissions`. Authority is `allowedActions` minus `deniedActions` only; spend delegations carry `allowedPaymentTypes` and `maxSpend`, and `allowedOrigins` bounds app-agent origins. Runtime mounts surface `allowedActions`/`deniedActions` without a scope string.
 - **Trust guidance follows the hosted workflow.** The packaged trust-workflow skill and runtime-mount trust instructions use `proofable_verify_or_guide` first; `proofable_proofs_check` is only for an explicit yes/no eligibility, gate, or access question.
-- **The packaged `proofable-setup` skill ships with the SDK.** Published skills are generated from the canonical `proofable/mcp` `skills/` directory; CI verifies parity so the two packages can never publish different skill content.
+- **The packaged `proofable-setup` skill ships with the SDK.** The plugin bundle and `@proofable/sdk` ship the same skill content, so the two packages cannot describe different setup steps.
 
 ### Upgrade
 
