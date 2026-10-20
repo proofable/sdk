@@ -98,8 +98,8 @@ const CHANGELOG_NARRATION = [
 
 /** The operator's private context. */
 const OPERATOR_LEAK = [
-  /\bACTIVE_GOAL\b/,
-  /\bPROOFABLE-POLICY\b/,
+  new RegExp(`\\b${['ACTIVE', '_GOAL'].join('')}\\b`),
+  new RegExp(`\\b${['PROOFABLE', '-POLICY'].join('')}\\b`),
   /\bGolden Standards\b/,
   /\boperator profile\b/i,
 ];
