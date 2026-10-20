@@ -16,7 +16,7 @@ if (!WALLET_PRIVATE_KEY) {
 }
 
 async function main() {
-  console.log('Proofable — basic example\n');
+  console.log('Proofable: basic example\n');
 
   const wallet = new ethers.Wallet(WALLET_PRIVATE_KEY);
   const walletAddress = wallet.address;

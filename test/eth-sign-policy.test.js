@@ -17,7 +17,7 @@ describe('eth_sign is never used (security regression)', () => {
     vi.restoreAllMocks();
   });
 
-  it('client.verify() fails closed when personal_sign is unsupported — never falls back to eth_sign', async () => {
+  it('client.verify() fails closed when personal_sign is unsupported and never falls back to eth_sign', async () => {
     const calls = [];
     const wallet = {
       address: '0x742d35Cc6634C0532925a3b8D82AB78c0D73C3Db',

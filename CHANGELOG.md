@@ -46,6 +46,12 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 npm install @proofable/sdk@0.1.4
 ```
 
+## [0.1.3] - 2026-09-28
+
+### Fixed
+
+- **The proof badge and pill link meet the WCAG 2.2 AA target size.** Both render a 24 by 24 pixel target, so they are easy to tap on a phone.
+
 ## [0.1.2] - 2026-09-24
 
 ### Changed
@@ -148,26 +154,11 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 | [1.1.0](https://www.npmjs.com/package/@neus/sdk/v/1.1.0) | 2026-05-26 | First public SDK release on npm: OAuth-first setup, the CLI, public MCP tools including encrypted Vault secrets, and the Claude Code plugin with the trust workflow skill. |
 | [1.0.12](https://www.npmjs.com/package/@neus/sdk/v/1.0.12) | 2026-05-26 | First `@neus/sdk` release with the hosted MCP CLI (`neus setup`, `neus auth`, import/export) and the OAuth browser flow. |
 
-<!--
-Media placeholders for this release line. Drop the finished files under docs/images/releases/ and swap each comment for the matching <img> / <Video> include.
--->
-
-<!--
-<update-image-0.1.1>
-  TODO: screenshot — defineGate + gateCheck in an app: the gate panel before and after a proof is reused.
-  Suggested path: docs/images/releases/sdk-0.1.1-define-gate.png
-</update-image-0.1.1>
--->
-
-<!--
-<update-image-0.1.0>
-  TODO: screenshot — npx -y @proofable/sdk setup registering the endpoint in a host.
-  Suggested path: docs/images/releases/sdk-0.1.0-setup.png
-</update-image-0.1.0>
--->
-
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/proofable/sdk/compare/v0.1.5...v0.1.6
+[0.1.5]: https://github.com/proofable/sdk/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/proofable/sdk/compare/v0.1.3...v0.1.4
-[0.1.2]: https://github.com/proofable/sdk/compare/v0.1.1...v0.1.2
+[0.1.3]: https://github.com/proofable/sdk/compare/v0.1.1...v0.1.3
+[0.1.2]: https://www.npmjs.com/package/@proofable/sdk/v/0.1.2
 [0.1.1]: https://github.com/proofable/sdk/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/proofable/sdk/releases/tag/v0.1.0

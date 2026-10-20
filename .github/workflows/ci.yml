@@ -32,7 +32,7 @@ jobs:
         env:
           PROOFABLE_MCP_SKILLS_ROOT: ${{ github.workspace }}/mcp/skills
       - run: npm ci
-      - run: node scripts/validate-public-surface.mjs
+      - run: npm run validate
       - run: npm run lint
       - run: npm test --silent
       - run: npm run build
