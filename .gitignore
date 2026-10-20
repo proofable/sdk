@@ -10,3 +10,11 @@ cjs/
 .env.*
 !.env.example
 !**/.env.example
+
+# Proofable operator mount artifacts (private; never publish)
+.claude/
+.cursor/
+.hermes/
+.proofable/
+AGENTS.md
+CLAUDE.md
