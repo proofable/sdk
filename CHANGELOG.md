@@ -9,6 +9,8 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-20
+
 ### Fixed
 
 - **`fulfillGate()` completes AI service orders.** It now sends `serviceParameters`, the buyer's values for the listing's `serviceInputs`, so an order for a service with a required input no longer fails with `SERVICE_PARAMETER_REQUIRED`. `PublicGateSnapshot.serviceInputs`, `FulfillGateParams.serviceParameters` and the response's `serviceJob` are typed. The run's answer appears on the buyer's receipt at `meta.marketplace.serviceJob.result`.
@@ -154,7 +156,8 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 | [1.1.0](https://www.npmjs.com/package/@neus/sdk/v/1.1.0) | 2026-05-26 | First public SDK release on npm: OAuth-first setup, the CLI, public MCP tools including encrypted Vault secrets, and the Claude Code plugin with the trust workflow skill. |
 | [1.0.12](https://www.npmjs.com/package/@neus/sdk/v/1.0.12) | 2026-05-26 | First `@neus/sdk` release with the hosted MCP CLI (`neus setup`, `neus auth`, import/export) and the OAuth browser flow. |
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/proofable/sdk/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/proofable/sdk/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/proofable/sdk/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/proofable/sdk/compare/v0.1.3...v0.1.4
