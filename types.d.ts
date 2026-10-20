@@ -555,6 +555,8 @@
       type: string;
       label?: string;
     };
+    /** What the buyer fills in for an AI service listing. Send the values as `serviceParameters` on fulfill. */
+    serviceInputs?: Array<{ name: string; label: string; required: boolean }>;
   }
 
   export interface FulfillGateParams {
@@ -574,6 +576,8 @@
       connectedAccountId?: string;
       toolkitSlug?: string;
     };
+    /** The buyer's values for an AI service listing's `serviceInputs`, each up to 512 characters. */
+    serviceParameters?: Array<{ name: string; value: string }>;
   }
 
   export interface GateFulfillmentResult {
@@ -591,6 +595,13 @@
       qHash: string;
       fulfillment: GateFulfillmentResult;
       successReturnUrl?: string;
+      /** The run an AI service order started. Its answer appears on the receipt (`meta.marketplace.serviceJob.result`) when it finishes. */
+      serviceJob?: {
+        jobId: string;
+        qHash?: string | null;
+        status?: string | null;
+        proofUrl?: string | null;
+      };
     };
     error?: any;
   }

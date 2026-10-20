@@ -1837,7 +1837,8 @@ export class ProofableClient {
    * @param {string} [params.paymentCheckoutSessionId] Stripe checkout session id (card rail)
    * @param {string} [params.paymentTxHash] USDC payment transaction hash (wallet rail)
    * @param {object} [params.accessGrant] Buyer-approved listing access when the snapshot includes requestedAccess
-   * @returns {Promise<object>} `{ success, data: { gateId, qHash, fulfillment, successReturnUrl? } }`
+   * @param {Array<{name: string, value: string}>} [params.serviceParameters] The buyer's values for an AI service listing's `serviceInputs` (each value up to 512 characters)
+   * @returns {Promise<object>} `{ success, data: { gateId, qHash, fulfillment, successReturnUrl?, serviceJob? } }`. For an AI service, the answer appears on the receipt at `meta.marketplace.serviceJob.result` when the run finishes.
    */
   async fulfillGate(params = {}) {
     const gateId = String(params.gateId || '').trim();
@@ -1857,6 +1858,12 @@ export class ProofableClient {
     if (paymentTxHash) body.paymentTxHash = paymentTxHash;
     if (params.accessGrant && typeof params.accessGrant === 'object' && !Array.isArray(params.accessGrant)) {
       body.accessGrant = params.accessGrant;
+    }
+    if (Array.isArray(params.serviceParameters)) {
+      const serviceParameters = params.serviceParameters
+        .filter((entry) => entry && typeof entry === 'object' && String(entry.name || '').trim())
+        .map((entry) => ({ name: String(entry.name).trim(), value: String(entry.value ?? '') }));
+      if (serviceParameters.length) body.serviceParameters = serviceParameters;
     }
 
     const response = await this._makeRequest(

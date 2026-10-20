@@ -685,6 +685,33 @@ describe('ProofableClient', () => {
         }
       });
     });
+
+    it('sends the buyer values for an AI service listing', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            success: true,
+            data: {
+              gateId: 'gate_service',
+              qHash,
+              fulfillment: { delivery: 'access_granted' },
+              serviceJob: { jobId: 'run-1', status: 'pending' }
+            }
+          })
+      });
+
+      const out = await client.fulfillGate({
+        gateId: 'gate_service',
+        qHash,
+        walletAddress: EVM_A,
+        serviceParameters: [{ name: 'url', value: 'proofable.me' }, { name: '', value: 'dropped' }]
+      });
+
+      expect(out.data.serviceJob.jobId).toBe('run-1');
+      const [, init] = fetch.mock.calls[0];
+      expect(JSON.parse(init.body).serviceParameters).toEqual([{ name: 'url', value: 'proofable.me' }]);
+    });
   });
 
   describe('revokeOwnProof()', () => {

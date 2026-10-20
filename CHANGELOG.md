@@ -9,6 +9,10 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fulfillGate()` completes AI service orders.** It now sends `serviceParameters`, the buyer's values for the listing's `serviceInputs`, so an order for a service with a required input no longer fails with `SERVICE_PARAMETER_REQUIRED`. `PublicGateSnapshot.serviceInputs`, `FulfillGateParams.serviceParameters` and the response's `serviceJob` are typed. The run's answer appears on the buyer's receipt at `meta.marketplace.serviceJob.result`.
+
 ## [0.1.6] - 2026-10-12
 
 ### Changed
