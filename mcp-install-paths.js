@@ -1,39 +1,22 @@
 /**
- * MCP install-path truth table — the single source of truth for how a user
- * actually gets Proofable into a given client.
+ * Per-client MCP install paths and post-install sign-in steps.
  *
- * Why this file exists
- * --------------------
- * The same four sentences used to be hand-written in the product page, the
- * Connect menus, the CLI hints, the docs, and five READMEs. They drifted, and
- * they were wrong in the same way: they told every client to "Click Connect".
- * Only two clients render a button by that name. Everywhere else the user goes
- * looking for a control that does not exist (Cursor, VS Code, Claude Code,
- * Codex) or is named something else entirely.
- *
- * The rule this table encodes: never name a control. Describe the step the
- * client actually performs, using the client's own vocabulary.
- *
- * Data-only and browser-safe on purpose: no IO, no imports, and every field
- * serializable. The product page, the CLI, the docs and the marketplace
- * manifests all read this one table, and the mirror into the product repo is a
- * copy rather than a re-implementation.
- *
- * Verified against vendor docs on 2026-09-26. When a vendor changes their
- * install flow, change it here and it changes everywhere.
+ * Each entry describes the step the client actually performs in its own UI or
+ * CLI. Data-only and browser-safe: no IO, no imports, and every field
+ * serializable.
  */
 
 /**
  * How a client receives the server.
  *
- * - `deeplink` — the client has a URL scheme that installs the server on click
+ * - `deeplink`: the client has a URL scheme that installs the server on click
  *   (Cursor, VS Code). One step; the client handles the rest.
- * - `plugin`   — the client has a plugin/marketplace bundle that carries skills
+ * - `plugin`: the client has a plugin or marketplace bundle that carries skills
  *   and (sometimes) the server (Claude Code, Codex, Cursor, Devin, Antigravity,
  *   Hermes, OpenClaw, ChatGPT).
- * - `command`  — a CLI/config write is the honest full path (Codex, Gemini CLI,
+ * - `command`: a CLI or config write registers the server (Codex, Gemini CLI,
  *   Warp, OpenClaw, Hermes, Cline, JetBrains).
- * - `url`      — paste the endpoint into a settings UI; the host runs its own
+ * - `url`: paste the endpoint into a settings UI; the host runs its own
  *   sign-in (ChatGPT, Claude web/Desktop connectors, Zed, n8n).
  */
 export const MCP_INSTALL_CLASSES = ['deeplink', 'plugin', 'command', 'url'];
@@ -41,13 +24,13 @@ export const MCP_INSTALL_CLASSES = ['deeplink', 'plugin', 'command', 'url'];
 /**
  * Who completes authentication after the server is registered.
  *
- * - `host`   — the client opens its own browser sign-in. This is the default
+ * - `host`: the client opens its own browser sign-in. This is the default
  *   and the only interactive path. Never describe the trigger as a button
  *   unless `connectLabel` is set.
- * - `manual` — no browser sign-in; the user must supply an access key header.
- *   Honest only for servers, CI, containers, and scheduled jobs. Used as the
- *   primary path only where the client documents no OAuth (Cline, JetBrains).
- * - `none`   — nothing to authenticate (discovery/metadata only).
+ * - `manual`: no browser sign-in; the user must supply an access key header.
+ *   Used for servers, CI, containers, and scheduled jobs, or clients that
+ *   document no OAuth (Cline, JetBrains).
+ * - `none`: nothing to authenticate (discovery/metadata only).
  */
 export const MCP_AUTH_OWNERS = ['host', 'manual', 'none'];
 
@@ -111,9 +94,7 @@ export const MCP_INSTALL_PATHS = [
     tier: 1,
     installClass: 'plugin',
     deeplinkKind: null,
-    // The Proofable plugin is skill-only: it ships the workflow skills and does
-    // NOT register the server (see mcp/plugins/proofable-mcp). So this is two
-    // honest steps, and the sign-in is a slash command, not a button.
+    // Sign-in in Claude Code is completed via the `/mcp` slash command.
     afterInstall: 'Installs the Proofable skills. Add the server, then run /mcp and sign in.',
     authOwner: 'host',
     connectLabel: null,

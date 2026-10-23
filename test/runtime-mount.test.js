@@ -440,7 +440,7 @@ describe('runtime-mount', () => {
       });
     });
 
-    it('fails closed when permission state is missing or expired', () => {
+    it('denies actions when permission state is missing or expired', () => {
       const identityOnly = buildRuntimeBundle({ identity });
       const expired = buildRuntimeBundle({
         identity,

@@ -14,16 +14,12 @@ import {
 import { buildCursorMcpInstallHref, buildVsCodeMcpInstallHref } from '../mcp-hosts.js';
 
 /**
- * The regression this file locks out.
- *
- * Every client used to be handed the same sentence — "Click Connect and sign
- * in" — in the product page, the Connect menus, the CLI hint and five READMEs.
- * Only two clients render a control by that name. For Cursor, VS Code, Claude
- * Code and Codex the user went looking for a button that does not exist.
+ * Only two clients render a control named "Connect" (Claude connectors and
+ * Devin). Every other client must describe its actual sign-in step.
  */
 const FORBIDDEN_CONTROL_CLAIM = /click\s+(\*\*)?connect/i;
 
-describe('MCP install-path truth table', () => {
+describe('MCP install-path table', () => {
   it('gives every entry a valid class, auth owner and vendor doc link', () => {
     expect(MCP_INSTALL_PATHS.length).toBeGreaterThan(0);
     for (const entry of MCP_INSTALL_PATHS) {

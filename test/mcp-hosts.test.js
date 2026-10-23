@@ -58,14 +58,14 @@ describe('mcp-hosts', () => {
   });
 
   it('builds the universal generic mcpServers block for any client', () => {
-    // No key: URL-only OAuth block — any host runs Connect + PKCE. Never a
+    // No key: URL-only OAuth block (any host runs Connect + PKCE). Never a
     // header referencing an unset environment variable.
     expect(JSON.parse(buildGenericMcpJsonConfig())).toEqual({
       mcpServers: { proofable: { type: 'http', url: PROOFABLE_MCP_URL } }
     });
     expect(buildGenericMcpJsonConfig()).toBe(buildGenericMcpJsonConfigUrlOnly());
 
-    // OAuth JWTs are never frozen into static config — falls back to URL-only.
+    // OAuth JWTs are never frozen into static config; falls back to URL-only.
     expect(JSON.parse(buildGenericMcpJsonConfig('eyJhbGciOiJIUzI1NiJ9.e30.doz'))).toEqual(
       JSON.parse(buildGenericMcpJsonConfigUrlOnly())
     );

@@ -457,9 +457,9 @@ describe('proofable CLI', () => {
         refreshToken: 'rt_stored_rotating_token',
         expiresAt: Date.now() - 1000,
         clientId: 'proofable-cli',
-        resource: 'https://mcp.proofable.me/mcp',
+        resource: 'https://mcp.proofable.me/mcp'
       }),
-      'utf8',
+      'utf8'
     );
 
     const { stdout } = await runCli(['setup', '--client', 'cursor', '--json'], context);

@@ -662,9 +662,9 @@ export async function signMessage({ provider, message, walletAddress, chain } = 
       }
     }
 
-    // Fail closed: never fall back to eth_sign. It signs an opaque digest with no
-    // user-readable message or domain separation — the classic wallet-drainer
-    // primitive. `signMessage` below (EIP-191) remains the safe provider-native path.
+    // Never fall back to eth_sign. It signs an opaque digest with no
+    // user-readable message or domain separation. `signMessage` below
+    // (EIP-191) remains the safe provider-native path.
     if (secondPersonalSignError || firstPersonalSignError) {
       const lastError = secondPersonalSignError || firstPersonalSignError;
       const isUserRejection = [4001, 'ACTION_REJECTED'].includes(lastError?.code);
@@ -911,9 +911,8 @@ export class StatusPoller {
 
 export const PROOFABLE_CONSTANTS = {
   /**
-   * Canonical EVM identity chain (Base mainnet) — the chain EVM DIDs and
-   * signer messages reference. Matches protocol chain-context-resolver.js
-   * CANONICAL_EVM_IDENTITY_CHAIN_ID. NOT the on-chain anchoring rail.
+   * Default EVM identity chain (Base mainnet): the chain EVM DIDs and
+   * signer messages reference. Distinct from the optional on-chain anchoring rail.
    */
   IDENTITY_CHAIN_ID: 8453,
   /**

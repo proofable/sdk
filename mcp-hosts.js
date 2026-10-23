@@ -55,12 +55,7 @@ export const IDE_HOST_LABELS = {
 };
 
 /**
- * IDE host brand logo paths.
- *
- * These four URLs mirror `FIRST_PARTY_ASSETS.brandLogos.{cursor,anthropic,openai,microsoft}`
- * in the product `utils/imageUtils.ts` (LobeHub catalog). This file is the shared
- * This file is the canonical CLI/SDK source; the product app mirrors it.
- * When a logo URL changes, update both files in sync.
+ * IDE host brand logo URLs.
  */
 export const IDE_HOST_BRAND_LOGOS = {
   cursor: 'https://unpkg.com/@lobehub/icons-static-png@1.91.0/dark/cursor.png',
@@ -80,7 +75,7 @@ export const IDE_HOST_BRAND_LOGOS = {
 function normalizeAccessKey(accessKey) {
   const key = String(accessKey || '').trim();
   // OAuth access tokens are JWTs (three dot-separated base64url segments). Never write
-  // them as a static Bearer header — return URL-only so the IDE runs OAuth itself.
+  // them as a static Bearer header; return URL-only so the host runs OAuth itself.
   if (key && !key.startsWith('npk_') && key.split('.').length === 3) {
     return '';
   }
@@ -90,7 +85,7 @@ function normalizeAccessKey(accessKey) {
 /**
  * Build the MCP HTTP server config for an IDE/client.
  *
- * Two paths, one session model — same Proofable Profile/Account either way:
+ * Two paths, one session model (same Proofable Profile/Account either way):
  *
  * - `npk_…` Profile access keys are durable (never expire). Written as a static
  *   `Authorization: Bearer npk_…` header. Used for servers, CI, and automation
@@ -160,10 +155,10 @@ export function buildVsCodeMcpConfig(accessKey) {
  * automation. OAuth JWTs are never frozen into static config.
  *
  * With `envVar: true` the Authorization value becomes
- * `${PROOFABLE_ACCESS_KEY}` (the canonical CLI/CI environment variable), so
+ * `${PROOFABLE_ACCESS_KEY}` (the CLI and CI environment variable), so
  * the printed block never contains a secret. This is explicit caller intent:
  * it always emits the access-key header template, with or without a key in
- * hand — the runtime that resolves the interpolation supplies the value.
+ * hand, and the runtime that resolves the interpolation supplies the value.
  *
  * @param {string | null | undefined} accessKey
  * @param {{ envVar?: boolean }} [options] - emit the `${PROOFABLE_ACCESS_KEY}` template instead of a literal key

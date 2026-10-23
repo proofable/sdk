@@ -11,7 +11,7 @@ export const PROOFABLE_PKG = '@proofable/sdk';
 /** Recommended one-time install for builders using the CLI regularly. */
 export const PROOFABLE_INSTALL_CLI = `npm i -g ${PROOFABLE_PKG}`;
 
-/** Zero-install prefix — works without global install. */
+/** Zero-install prefix: works without global install. */
 export const PROOFABLE_NPX = `npx -y ${PROOFABLE_PKG}`;
 
 /** Short commands (after `PROOFABLE_INSTALL_CLI`). */

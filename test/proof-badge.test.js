@@ -17,7 +17,7 @@ describe('ProofBadge evidence', () => {
     ['revoked', 'Unverified'],
     ['expired', 'Unverified'],
     ['rejected_verifier_failure', 'Unverified'],
-    ['', 'Unknown'],
+    ['', 'Unknown']
   ])('renders %s using the SDK status owner', (status, label) => {
     for (const Component of [ProofBadge, SimpleProofBadge]) {
       expect(render(Component, { proof: { status } })).toContain(`aria-label="${label}"`);
@@ -41,16 +41,11 @@ describe('ProofBadge evidence', () => {
       .not.toContain('href="https://proofable.me/proof/example"');
   });
 
-  // WCAG 2.2 AA Target Size (Minimum) is 24x24 CSS px. The `sm` pill computed to
-  // 16px tall (10px text x line-height 1, plus 2px padding and a 1px border per
-  // side), which axe flags as `target-size` (serious) wherever two of these stack
-  // in a list — measured on neus `/` and `/connect` at mobile width. Pinned here
-  // because the widget ships to every consumer, so the fix has to live in the
-  // widget rather than in one consumer's override.
+  // WCAG 2.2 AA Target Size (Minimum) is 24x24 CSS px.
   it('meets the 24x24 target-size minimum at every size', () => {
     for (const props of [
       { proof: { status: 'verified' } },
-      { proof: { status: 'verified' }, size: 'md' },
+      { proof: { status: 'verified' }, size: 'md' }
     ]) {
       const style = (render(ProofBadge, props).match(/style="([^"]*)"/) || [])[1] || '';
       expect(style).toContain('min-height:24px');

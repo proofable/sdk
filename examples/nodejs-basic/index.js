@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Proofable — basic Node.js example
+ * Proofable: basic Node.js example
  * Direct verification with standard message signing
  */
 

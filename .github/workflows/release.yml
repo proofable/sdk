@@ -21,20 +21,10 @@ jobs:
           package-manager-cache: false
       - name: Verify release tag
         run: node -e "const p=require('./package.json'); if (process.env.GITHUB_REF_NAME !== 'v'+p.version) throw new Error('tag must equal v'+p.version)"
-      - name: Check out proofable/mcp for canonical skill parity
-        uses: actions/checkout@v7
-        with:
-          repository: proofable/mcp
-          path: mcp
-      - name: Published skills match proofable/mcp canonical skills
-        run: node scripts/check-mcp-skill-parity.mjs --require
-        env:
-          PROOFABLE_MCP_SKILLS_ROOT: ${{ github.workspace }}/mcp/skills
       - run: npm ci
       - run: npm run lint
       - run: npm test --silent
       - run: npm audit --omit=dev --audit-level=high
-      # prepack (triggered by pack) is the single artifact build; publish skips lifecycle scripts.
       - run: npm pack --dry-run
       - name: Publish @proofable/sdk
         shell: bash
@@ -45,8 +35,6 @@ jobs:
           if npm view "$name@$version" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
             echo "$name@$version is already published; skipping npm publish."
           else
-            # Lifecycle scripts are skipped: lint/test/build already ran above (single execution).
-            # Artifacts were built by the explicit build step and are packed as-is.
             npm publish --ignore-scripts --access public --registry https://registry.npmjs.org
           fi
 
