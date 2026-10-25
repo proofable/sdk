@@ -46,7 +46,7 @@ Proofable: Blocked. A required trust condition was not satisfied. Next: Do not c
 
 - Proofs stay off the chain unless the user asks for a blockchain record. Do not prompt for a wallet otherwise.
 - Use proof IDs only from tool responses. Prefer “proof ID” / “portable proof” in user text.
-- Never ask for a credential and never accept one. A key is saved on the profile in Proofable, where a run uses it without the value reaching a model or an app. This connection carries no tool that stores a secret; a call to one answers `platform_only`.
+- Never ask for a credential and never accept one. A key is saved on the profile in Proofable, where a run uses it without the value reaching a model or an app. This connection carries no tool that stores a secret.
 - Use live verifier IDs from **`proofable_context`** / **`proofable_verifiers_catalog`**. Do not hardcode a second catalog.
 
 ## Setup and mount
