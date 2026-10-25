@@ -1,6 +1,6 @@
 # Quickstart reference
 
-Load this file when the developer needs the full placement matrix or framework-specific wiring details.
+Load this file when the developer needs the placement matrix or framework-specific wiring.
 
 ## Placement matrix
 

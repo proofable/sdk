@@ -1,18 +1,18 @@
 # Setup and project mount
 
-Load this file only when the user needs install, sign-in, access keys, or project mount help.
+Load this file only when the user needs install, sign-in, access key, or project mount help.
 
 ## Install
 
-Install Proofable on this host, then finish sign-in in the client itself:
+Register the hosted endpoint on this host, then finish sign-in in the client itself:
 
 `https://mcp.proofable.me/mcp`
 
-If the host already has a Proofable plugin, use the plugin path. Do not also write a second `proofable` entry.
+If the host already has a Proofable plugin, use the plugin. Do not also write a second `proofable` entry.
 
-If the client shows no sign-in, use its own MCP login command after the URL is registered.
+If the client shows no sign-in, run its own MCP login command after the URL is registered.
 
-Have the CLI?
+With the Proofable CLI:
 
 ```bash
 proofable setup
@@ -26,9 +26,7 @@ proofable setup --access-key <npk_...>
 
 Create access keys under **Account → Access keys** on [proofable.me](https://proofable.me/profile?tab=account). Never paste keys into chat or committed files.
 
-Hosted MCP sign-in: **`https://mcp.proofable.me/mcp`** (discovery/anonymous: `https://mcp.proofable.me/mcp`)
-
-After sign-in, call `proofable_context` once. Reuse a current proof before starting another verification. Full page: https://docs.proofable.me/mcp/setup
+After sign-in, call `proofable_context` once and reuse a current proof before starting another verification. Full guide: https://docs.proofable.me/mcp/setup
 
 ## Connect an agent to a project
 

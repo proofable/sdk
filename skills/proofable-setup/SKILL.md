@@ -11,15 +11,13 @@ metadata:
 
 # Set up Proofable
 
-Give AI agents identity, scoped access, and proof of every action.
-
 Add this hosted endpoint to your MCP client, then finish the sign-in it opens:
 
 `https://mcp.proofable.me/mcp`
 
 If the client offers the Proofable plugin, install it instead of adding the URL by hand. Keep one Proofable connection per client.
 
-Have the CLI?
+With the Proofable CLI:
 
 ```bash
 proofable setup
@@ -39,7 +37,7 @@ For a specific requirement, ask:
 Check whether I already have the proof needed for this task. Reuse it if it qualifies; otherwise show me the next step.
 ```
 
-Then, if you need agents:
+For agents, ask:
 
 ```text
 Show what my agents are allowed to do.
@@ -47,10 +45,10 @@ Show what my agents are allowed to do.
 
 The agent lives on the signed-in profile by default. Ask for a dedicated spend account only when the agent should pay from its own account. Open **Connections** on proofable.me to link apps.
 
-Full page: https://docs.proofable.me/mcp/setup
-
 Optional project mount (`cursor`, `claude`, `codex`, `hermes`, `openclaw`, or `opencode`; VS Code uses `cursor`):
 
 ```bash
 proofable mount <agentId> --apply cursor
 ```
+
+Full guide: https://docs.proofable.me/mcp/setup

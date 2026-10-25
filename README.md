@@ -5,21 +5,17 @@ Add verification gates, reusable proof, and agent permissions to your app.
 [![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/%40proofable%2Fsdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-Verify someone once. Check that proof forever after.
+Verify someone once, then reuse that proof on every later check.
 
 ## Start here
-
-**Any MCP client**
-
-`https://mcp.proofable.me/mcp`
-
-**Install**
 
 ```bash
 npm install @proofable/sdk
 ```
 
-**Verify a person in three lines**
+Requires Node.js 20 or later.
+
+**Send a person to verify**
 
 ```js
 import { getHostedCheckoutUrl } from '@proofable/sdk';
@@ -30,7 +26,7 @@ window.location.assign(getHostedCheckoutUrl({
 }));
 ```
 
-They verify on Proofable, return with a proof ID (`qHash`), and every future decision reads that proof. No UI to build. No gate to define.
+The person verifies on Proofable and returns to `returnUrl` with a proof ID (`qHash`). Store it; later decisions read that proof.
 
 **Check the proof on your server**
 
@@ -47,17 +43,11 @@ if (result.satisfied) {
 }
 ```
 
-**Docs**
+[Docs](https://docs.proofable.me) | [SDK](https://docs.proofable.me/sdks/javascript) | [CLI](https://docs.proofable.me/sdks/cli) | [MCP](https://docs.proofable.me/mcp/overview) | [API](https://docs.proofable.me/api/overview) | [Examples](https://docs.proofable.me/use-cases/gate-access)
 
-https://docs.proofable.me
+## Combine checks in a gate
 
-[SDK](https://docs.proofable.me/sdks/javascript) | [CLI](https://docs.proofable.me/sdks/cli) | [MCP](https://mcp.proofable.me/mcp) | [API](https://docs.proofable.me/api/overview) | [Examples](https://docs.proofable.me/use-cases/gate-access) | [Docs](https://docs.proofable.me)
-
-Requires Node.js 20 or later. Full CLI setup: `npx -y @proofable/sdk setup`.
-
-## When one check becomes a gate
-
-One check is not a gate. Reach for a gate when the decision needs several checks, a price, or a schedule.
+Define a gate when the decision needs several checks.
 
 ```js
 import { ProofableClient, defineGate } from '@proofable/sdk';
@@ -65,13 +55,13 @@ import { ProofableClient, defineGate } from '@proofable/sdk';
 const proofable = new ProofableClient();
 const gate = defineGate([
   { verifierId: 'proof-of-human' },
-  { verifierId: 'ownership-dns-txt', match: { domain: 'acme.com' } },
+  { verifierId: 'ownership-dns-txt', match: [{ path: 'domain', value: 'acme.com' }] },
 ]);
 
 const result = await proofable.gateCheck({ gate, subject });
 ```
 
-A published `gateId` is optional and only for a persisted listing, price, or schedule. Never ship access keys in browser code.
+A published `gateId` is optional; use one when you need a persisted listing, price, or schedule. Never ship access keys in browser code.
 
 ## Gate a React page
 
@@ -83,7 +73,7 @@ import { VerifyGate } from '@proofable/sdk/widgets';
 
 ## Connect an editor or agent host
 
-Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a server key as a Bearer token from `PROOFABLE_ACCESS_KEY`.
+Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a server key from `PROOFABLE_ACCESS_KEY` as a Bearer token.
 
 ```bash
 npx -y @proofable/sdk setup
@@ -103,7 +93,7 @@ npx -y @proofable/sdk doctor --live
 | `client.verifyFromApp()` | Create a proof for an approved user (server; needs appId + origin) |
 | `client.getProof()` | Fetch a public proof by its proof ID (`qHash`) |
 | `client.getPrivateProof()` | Fetch a private proof (wallet-bound) |
-| `client.pollProofStatus()` | Wait for async verification completion |
+| `client.pollProofStatus()` | Wait for async verification to complete |
 | `client.getProofsByWallet()` | List a wallet's public proofs |
 | `client.getPrivateProofsByWallet()` | List a wallet's private proofs |
 | `client.gateCheck()` | Server-side eligibility check before access |
@@ -126,7 +116,7 @@ const client = new ProofableClient({
 });
 ```
 
-`appId` is optional public attribution for advanced server flows. Published gate checkout and `gateCheck({ gateId })` do not require it. `apiKey` (`npk_*`) is server-side only.
+`apiKey` (`npk_*`) is server-side only. `appId` is optional public attribution for server flows; published gate checkout and `gateCheck({ gateId })` work without it.
 
 Issues: [github.com/proofable/sdk/issues](https://github.com/proofable/sdk/issues). Security: [SECURITY.md](./SECURITY.md). Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md).
 
