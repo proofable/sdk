@@ -1,6 +1,6 @@
 ---
 name: proofable-trust-workflow
-description: Verifies identity, permissions, and reusable proofs before sensitive assistant actions. Use when confirming authority, loading a trusted agent, managing Vault secrets, or when the user asks for Proofable.
+description: Verifies identity, permissions, and reusable proofs before sensitive assistant actions. Use when confirming authority, loading a trusted agent, scoping what it may do, or when the user asks for Proofable.
 license: Apache-2.0
 compatibility: Requires a client that supports remote HTTP MCP servers and hosted OAuth.
 metadata:
@@ -18,7 +18,7 @@ Use this before an assistant runs sensitive tools or takes another verification-
 ## When to use
 
 - Before sensitive tools, spend, publish, secrets, or agent actions
-- When the user asks for Proofable, proofs, Vault, or trusted-agent setup
+- When the user asks for Proofable, proofs, agent permissions, or trusted-agent setup
 - When acting as a registered profile agent in a project
 
 ## Workflow
