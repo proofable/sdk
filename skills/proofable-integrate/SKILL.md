@@ -11,7 +11,7 @@ metadata:
 
 # Integrate Proofable
 
-Add proof-based access control in four steps. Define the policy in the app. A published `gateId` is optional.
+Add proof-based access control. Define the policy in app code; a published `gateId` is optional.
 
 ## Ask once
 
@@ -28,7 +28,7 @@ Do not ask about Proofable architecture, proof schemas, wallet setup, or credent
 npm install @proofable/sdk
 ```
 
-If the app uses React, also ensure `react` and `react-dom` are installed (peer deps).
+React apps also need `react` and `react-dom` (peer dependencies).
 
 ## Define the policy
 
@@ -110,7 +110,7 @@ User-visible strings in the app should use plain language:
 - "Sign in" or "Connect", not "mount" or "authenticate"
 - "Your account", not "wallet" or "DID" unless the user specifically chose a wallet flow
 
-Full copy guide: [references/quickstart.md](references/quickstart.md)
+Framework wiring, `VerifyGate` props, and client methods: [references/quickstart.md](references/quickstart.md)
 
 ## When to stop
 

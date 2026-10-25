@@ -1,38 +1,25 @@
 # Proofable SDK security notes
 
-Treat **wallet signatures** and **API keys** as secrets. Do not log them, expose them to clients, or store them in analytics.
+Report a vulnerability to [dev@proofable.me](mailto:dev@proofable.me) instead of opening a public issue.
+
+Treat **wallet signatures** and **API keys** as secrets. Keep them out of logs, client code, and analytics.
 
 ## Authentication model
 
-- **Verification requests** are authenticated with a wallet signature over the **CAIP-380 Portable Proof** six-line signing string. Never roll your own message format in production. Use the SDK or the hosted preparation step documented for HTTP integrations.
-- **Proof lookups by `qHash`** are safe for public proofs. Private proofs return a minimal payload unless the caller proves ownership (authenticated owner or signed request).
-- **Owner-only reads** of private proof payloads require an extra owner-signed request. The SDK attaches the required signed headers for you.
-
-## Do not
-
-- Do not treat proof signatures as bearer tokens (they are request-bound).
-- Do not embed API keys in browser apps. Keep API keys server-side only.
-- Do not log or persist proof signatures, API keys, or third-party auth credentials (if your integration uses them).
+- **Verification requests** carry a wallet signature over the six-line **CAIP-380 Portable Proof** signing string. Build that string with the SDK, or with the hosted preparation step for HTTP integrations, never by hand.
+- **Proof lookups by `qHash`** return public proofs in full. A private proof returns a minimal payload unless the caller proves ownership with an authenticated session or a signed request.
+- **Owner reads** of a private proof payload need an owner-signed request. The SDK attaches the signed headers for you.
+- **Proof signatures** are bound to the request they sign and do not work as bearer tokens. Do not log or persist them.
+- **API keys** (`npk_...`) stay server-side. Never embed them in browser apps.
 
 ## Privacy defaults
 
-**`client.verify()`** defaults to **private**.
+`client.verify()` and `VerifyGate` create mode both default to **private**. Choose public visibility only when a proof must be reusable without owner-authenticated access:
 
-**`VerifyGate`** create mode also defaults to **private**.
+| Setting | Result |
+| --- | --- |
+| `privacyLevel: 'private'` (default) | Minimal payload unless the owner reads it |
+| `privacyLevel: 'public'`, `publicDisplay: false` | Unlisted: anyone with the `qHash` can read it |
+| `privacyLevel: 'public'`, `publicDisplay: true` | Listed and discoverable |
 
-Use public visibility only when you need proof reuse without owner-authenticated access:
-
-- unlisted public: `privacyLevel: 'public'`, `publicDisplay: false`
-- listed public: `privacyLevel: 'public'`, `publicDisplay: true`
-
-Do not treat unlisted public proofs as secret.
-
-`storeOriginalContent` is an advanced storage control. Most integrations should leave the default as-is.
-
-Controls:
-
-- `privacyLevel` - private by default; switch to public only for intentional public reuse
-- `publicDisplay` - discovery vs unlisted
-- `storeOriginalContent` - advanced content-storage control
-
-Discoverable listings require **`privacyLevel: 'public'`** and **`publicDisplay: true`**.
+Treat an unlisted public proof as readable by anyone who has its ID. `storeOriginalContent` is an advanced storage control; most integrations keep the default.

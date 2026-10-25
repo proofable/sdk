@@ -11,9 +11,7 @@ metadata:
 
 # Proofable Trust Workflow
 
-Reuse existing proofs first. Verify again only when needed. Summarize as **Proofable**: Passed, Action needed, or Blocked. Never dump raw tool JSON.
-
-Use this before an assistant runs sensitive tools or takes another verification-sensitive step. Answer simple questions directly.
+Reuse existing proofs first and verify again only when needed. Summarize as **Proofable**: Passed, Action needed, or Blocked. Never dump raw tool JSON. Answer simple questions directly.
 
 ## When to use
 
@@ -23,14 +21,11 @@ Use this before an assistant runs sensitive tools or takes another verification-
 
 ## Workflow
 
-1. **`proofable_context`** once per session. Prefer signed-in profile context; omit wallet fields on check/verify tools.
-2. **Profile agent:** **`proofable_agent_mount`** (or `proofable mount <agentId> --apply <host>`) for identity, permissions, skills, and context.
-3. **Trust before action:** use **`proofable_verify_or_guide`** directly. It reuses qualifying proofs or returns the next secure step. Use **`proofable_proofs_check`** only for an explicit yes/no eligibility, gate, or access question; never use it for memory, context, or content retrieval. When signed in, ownership checks continue with **`proofable_verify`**. For another signer, prepare with **`proofable_verify_prepare`** and submit with **`proofable_verify_submit`**. Share a browser link only when a tool returns one.
+1. **`proofable_context`** once per session. Prefer signed-in profile context and omit wallet fields on check and verify tools. Call it again only after a profile change.
+2. **Profile agent:** **`proofable_agent_mount`** (or `proofable mount <agentId> --apply <host>`) loads identity, permissions, skills, and context.
+3. **Trust before action:** call **`proofable_verify_or_guide`** directly, before creating any new proof. It reuses a qualifying proof or returns the next secure step. Use **`proofable_proofs_check`** only for an explicit yes/no eligibility, gate, or access question, never for memory, context, or content retrieval. When signed in, ownership checks continue with **`proofable_verify`**. For another signer, prepare with **`proofable_verify_prepare`** and submit with **`proofable_verify_submit`**. Share a browser link only when a tool returns one.
 4. **Agent:** **`proofable_agent_link`**. If missing, **`proofable_agent_create`** (a dedicated account needs a key you create and hold; pass only its public address). Then **`proofable_agent_mount`**.
-5. **Proofs and context:** use the `proofable_context` context index first, then **`proofable_proofs_get`** with a known proof ID and `include=content` for an exact body.
-6. **Saved keys:** a credential belongs on the profile in Proofable, never in a conversation and never through a tool. Do not offer to store one from here.
-7. Reuse existing proofs via **`proofable_verify_or_guide`** before creating new ones. When signed in, `proofable_context` returns the current profile context; re-call it only after a profile change.
-8. Summarize as **Proofable**.
+5. **Proofs and context:** read the `proofable_context` context index first, then **`proofable_proofs_get`** with a known proof ID and `include=content` for an exact body.
 
 ## Proofable format
 
@@ -45,12 +40,10 @@ Proofable: Blocked. A required trust condition was not satisfied. Next: Do not c
 ## Hard rules
 
 - Proofs stay off the chain unless the user asks for a blockchain record. Do not prompt for a wallet otherwise.
-- Use proof IDs only from tool responses. Prefer “proof ID” / “portable proof” in user text.
-- Never ask for a credential and never accept one. A key is saved on the profile in Proofable, where a run uses it without the value reaching a model or an app. This connection carries no tool that stores a secret.
+- Use proof IDs only from tool responses. Say "proof ID" or "portable proof" in user text.
+- Never ask for a credential, never accept one, and never offer to store one. A key is saved on the profile in Proofable, where a run uses it without the value reaching a model or an app. This connection carries no tool that stores a secret.
 - Use live verifier IDs from **`proofable_context`** / **`proofable_verifiers_catalog`**. Do not hardcode a second catalog.
 
 ## Setup and mount
 
-Install, OAuth, access keys, and project mount: [references/setup.md](references/setup.md)
-
-Docs: [docs.proofable.me](https://docs.proofable.me). Setup: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup)
+Install, OAuth, access keys, and project mount: [references/setup.md](references/setup.md). Docs: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup)

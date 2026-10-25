@@ -1,8 +1,6 @@
 # Contributing
 
-By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
-
-**If you are integrating Proofable into a product**, use **[docs.proofable.me](https://docs.proofable.me)** and the live product first. The table below is for people proposing changes here.
+By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md). To integrate Proofable into a product, start at [docs.proofable.me](https://docs.proofable.me).
 
 | Need | Where |
 | --- | --- |
@@ -14,30 +12,16 @@ By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## What lives here
 
-`@proofable/sdk`: the JavaScript client, the `proofable` CLI, gate helpers, MCP host adapters, and the runnable examples. Verifier schemas live in [proofable/docs](https://github.com/proofable/docs). The hosted API and MCP server are not in this repository.
+`@proofable/sdk`: the JavaScript client, the `proofable` CLI, gate helpers, MCP host adapters, widgets, and runnable examples. Verifier schemas live in [proofable/docs](https://github.com/proofable/docs); propose a new check there with [Propose a verifier](https://docs.proofable.me/verification/propose-a-verifier).
 
 ## What helps
 
-- Bug reports with clear steps to reproduce and no secrets in the thread.
+- Bug reports with steps to reproduce.
 - Client, CLI, or gate changes that match what the live product does today.
-- Examples that a builder can run end to end without editing them first.
-- Tests when you change behavior that builders rely on.
+- Examples a builder can run end to end without editing them first.
+- Tests for any change to behavior builders rely on.
 
-To propose a new check, open a PR in [proofable/docs](https://github.com/proofable/docs) instead. See [Propose a verifier](https://docs.proofable.me/verification/propose-a-verifier).
-
-**Do not** share keys, tokens, bearer secrets, or private proof content in public issues or change descriptions.
-
+Keep keys, tokens, `.env` and `.npmrc` files, and private proof content out of issues, pull requests, and commits.
 ## Changelog
 
-Put a user-facing note under `## [Unreleased]` in [CHANGELOG.md](./CHANGELOG.md). Use Added, Changed, Deprecated, Removed, Fixed, or Security. Write what a builder will notice. Leave out ticket IDs, private repository names, and process notes.
-
-## Do not commit
-
-These paths are local-only or generated elsewhere (see `.gitignore`):
-
-- `.env`, `.npmrc`, secrets, and key material
-- `cjs/` and other build output
-
-## Describing your change
-
-Explain **what builders or end users will experience differently** (for example new fields, new errors, or renamed concepts). Keep the README, examples, and the written API reference in step with the live product.
+Add a note under `## [Unreleased]` in [CHANGELOG.md](./CHANGELOG.md), grouped as Added, Changed, Deprecated, Removed, Fixed, or Security. Describe what builders or end users will notice, such as new fields, new errors, or renamed concepts. Leave out ticket IDs and process notes. Keep the README and examples matching the live product.

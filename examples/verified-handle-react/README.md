@@ -1,4 +1,4 @@
-# Proofable Verified Handle React Example
+# Verified handle (React)
 
 Claim a handle, show a `ProofBadge`, and gate a creator action.
 
@@ -10,15 +10,15 @@ npm install
 npm run dev
 ```
 
-## What it demonstrates
+## What it shows
 
-1. **Claim flow**: user signs a handle binding with `ownership-pseudonym` and namespace `acme`.
-2. **Badge display**: `<ProofBadge qHash={qHash} showChains />` on a profile.
-3. **Server gate check**: before a privileged action, the backend calls `client.gateCheck({ gateId, address })`.
+1. **Claim:** the user signs a handle binding with `ownership-pseudonym` in the `acme` namespace.
+2. **Badge:** `<ProofBadge qHash={qHash} showChains />` on a profile.
+3. **Server gate check:** before a privileged action, the backend calls `client.gateCheck({ gateId, address })`.
 
 ## Key files
 
-- `src/App.jsx`: claim + badge UI
+- `src/App.jsx`: claim and badge UI
 - `server/check.mjs`: server-side eligibility check
 
 ## Docs
