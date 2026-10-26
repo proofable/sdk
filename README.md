@@ -1,6 +1,6 @@
 # Proofable SDK
 
-Add verification gates, reusable proof, and agent permissions to your app.
+Add AI agent permissions, human and domain checks, and signed proof to your app.
 
 [![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/%40proofable%2Fsdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
