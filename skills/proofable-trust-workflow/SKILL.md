@@ -24,7 +24,7 @@ Reuse existing proofs first and verify again only when needed. Summarize as **Pr
 1. **`proofable_context`** once per session. Prefer signed-in profile context and omit wallet fields on check and verify tools. Call it again only after a profile change.
 2. **Profile agent:** **`proofable_agent_mount`** (or `proofable mount <agentId> --apply <host>`) loads identity, permissions, skills, and context.
 3. **Trust before action:** call **`proofable_verify_or_guide`** directly, before creating any new proof. It reuses a qualifying proof or returns the next secure step. Use **`proofable_proofs_check`** only for an explicit yes/no eligibility, gate, or access question, never for memory, context, or content retrieval. When signed in, ownership checks continue with **`proofable_verify`**. For another signer, prepare with **`proofable_verify_prepare`** and submit with **`proofable_verify_submit`**. Share a browser link only when a tool returns one.
-4. **Agent:** **`proofable_agent_link`**. If missing, **`proofable_agent_create`** (a dedicated account needs a key you create and hold; pass only its public address). Then **`proofable_agent_mount`**.
+4. **Agent:** **`proofable_agent_link`**. If the agent already runs elsewhere (a repository, MCP server URL, A2A agent card, or package), import it with `proofable import <source>`. If missing, **`proofable_agent_create`** (a dedicated account needs a key you create and hold; pass only its public address). Then **`proofable_agent_mount`**.
 5. **Proofs and context:** read the `proofable_context` context index first, then **`proofable_proofs_get`** with a known proof ID and `include=content` for an exact body.
 
 ## Proofable format
