@@ -9,6 +9,18 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-27
+
+### Fixed
+
+- **The CLI exits cleanly after an error on Windows.** A failed command printed its error and then crashed Node, ending with exit code 127. It now exits with code 1.
+- **A dry-run mount says what it would write.** `proofable mount <agentId> --apply <host> --dry-run` lists the files as "would write" instead of "wrote".
+
+### Changed
+
+- **The packaged skills offer import for an agent that already runs elsewhere.** `proofable-setup` and `proofable-trust-workflow` point an agent at `proofable import <repository, URL, or folder>` for a GitHub repository, MCP server URL, A2A agent card or package, then at `proofable mount`.
+- **Listing links point at `/profile/listings`.** The setup skill and the portable proofs example link to the new listings page. Old `/profile/portals` links redirect.
+
 ## [0.1.7] - 2026-10-20
 
 ### Fixed
@@ -156,7 +168,8 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 | [1.1.0](https://www.npmjs.com/package/@neus/sdk/v/1.1.0) | 2026-05-26 | First public SDK release on npm: OAuth-first setup, the CLI, public MCP tools including encrypted Vault secrets, and the Claude Code plugin with the trust workflow skill. |
 | [1.0.12](https://www.npmjs.com/package/@neus/sdk/v/1.0.12) | 2026-05-26 | First `@neus/sdk` release with the hosted MCP CLI (`neus setup`, `neus auth`, import/export) and the OAuth browser flow. |
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/proofable/sdk/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/proofable/sdk/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/proofable/sdk/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/proofable/sdk/compare/v0.1.4...v0.1.5
