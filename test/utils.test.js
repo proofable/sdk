@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'module';
 import { Wallet } from 'ethers';
 import * as ed25519 from '@noble/ed25519';
@@ -162,6 +163,21 @@ describe('Utils', () => {
       expect(computePortableProofQHash({ ...base, signedTimestamp: base.signedTimestamp + 1 })).not.toBe(qHash);
       expect(computePortableProofQHash({ ...base, chainId: 1 })).not.toBe(qHash);
       expect(computePortableProofQHash({ ...base, data: { nested: { a: 1, b: 2 } } })).toBe(qHash);
+    });
+
+    it('verifies the CAIP-380 test vectors, which carry no walletAddress', async () => {
+      // Copies of assets/caip-380/minimal-1.json and minimal-solana-1.json in ChainAgnostic/CAIPs
+      const vectors = ['minimal-1.json', 'minimal-solana-1.json'].map((name) =>
+        JSON.parse(readFileSync(new URL(`./fixtures/caip-380/${name}`, import.meta.url), 'utf8')));
+      for (const vector of vectors) {
+        expect(computePortableProofQHash(vector)).toBe(vector.qHash);
+        const message = constructVerificationMessage({ ...vector, walletAddress: vector.data.owner });
+        expect(message).toBe(vector.signedMessage);
+        await expect(verifyPortableProofEnvelope(vector, { now: Date.UTC(2026, 9, 27) }))
+          .resolves.toMatchObject({
+            valid: true, didValid: true, signatureValid: true, qHashValid: true, fresh: false
+          });
+      }
     });
 
     it('verifies a Solana-style Ed25519 envelope offline', async () => {
