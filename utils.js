@@ -229,6 +229,11 @@ export function computePortableProofQHash(envelope) {
   return `0x${shake256(canonical, 256)}`;
 }
 
+function addressFromPkhDid(did) {
+  if (typeof did !== 'string' || !did.startsWith('did:pkh:')) return null;
+  return did.slice(did.lastIndexOf(':') + 1) || null;
+}
+
 /**
  * Verify a portable proof without calling Proofable.
  * EOA and Ed25519 signatures are fully offline. Smart-account signatures return
@@ -247,12 +252,20 @@ export async function verifyPortableProofEnvelope(envelope, options = {}) {
     envelope.qHash.toLowerCase() === computedQHash.toLowerCase();
   if (!qHashValid) errors.push('qHash does not match the canonical envelope');
 
+  // CAIP-380 envelopes need not carry walletAddress; the signer is the did:pkh address.
+  const walletAddress = typeof envelope.walletAddress === 'string' && envelope.walletAddress
+    ? envelope.walletAddress
+    : addressFromPkhDid(envelope.did);
+  if (!walletAddress) {
+    errors.push('did must be a did:pkh identifier');
+    return { valid: false, qHashValid, didValid: false, signatureValid: false, computedQHash, errors };
+  }
   const chainContext = envelope.chain ?? envelope.chainId;
-  const expectedDid = deriveDid(envelope.walletAddress, chainContext);
+  const expectedDid = deriveDid(walletAddress, chainContext);
   const didValid = expectedDid === envelope.did;
   if (!didValid) errors.push('did does not match walletAddress and chain context');
 
-  const message = constructVerificationMessage(envelope);
+  const message = constructVerificationMessage({ ...envelope, walletAddress });
   const method = String(envelope.signatureMethod || (envelope.chain ? 'ed25519' : 'eip191')).toLowerCase();
   let signatureValid = false;
   let signer = null;
@@ -261,16 +274,16 @@ export async function verifyPortableProofEnvelope(envelope, options = {}) {
   if (method === 'ed25519') {
     try {
       const namespace = String(envelope.chain || '').split(':')[0];
-      const publicKeyText = namespace === 'near' && envelope.walletAddress.startsWith('ed25519:')
-        ? envelope.walletAddress.slice(8)
-        : envelope.walletAddress;
+      const publicKeyText = namespace === 'near' && walletAddress.startsWith('ed25519:')
+        ? walletAddress.slice(8)
+        : walletAddress;
       const publicKey = bs58.decode(publicKeyText);
       const signatureText = String(envelope.signature || '').replace(/^ed25519:/, '');
       const signature = /^(0x)?[a-fA-F0-9]{128}$/.test(signatureText)
         ? Uint8Array.from(signatureText.replace(/^0x/, '').match(/.{2}/g).map((byte) => Number.parseInt(byte, 16)))
         : bs58.decode(signatureText);
       signatureValid = await ed25519.verify(signature, new TextEncoder().encode(message), publicKey);
-      signer = signatureValid ? envelope.walletAddress : null;
+      signer = signatureValid ? walletAddress : null;
     } catch (error) {
       errors.push(`Ed25519 signature verification failed: ${error.message}`);
     }
@@ -279,7 +292,7 @@ export async function verifyPortableProofEnvelope(envelope, options = {}) {
     try {
       const { verifyMessage } = await import('ethers');
       signer = verifyMessage(message, envelope.signature);
-      signatureValid = signer.toLowerCase() === envelope.walletAddress.toLowerCase();
+      signatureValid = signer.toLowerCase() === walletAddress.toLowerCase();
     } catch (error) {
       evmError = error;
     }
@@ -288,13 +301,13 @@ export async function verifyPortableProofEnvelope(envelope, options = {}) {
       try {
         const { Contract, hashMessage } = await import('ethers');
         const contract = new Contract(
-          envelope.walletAddress,
+          walletAddress,
           ['function isValidSignature(bytes32,bytes) view returns (bytes4)'],
           options.provider
         );
         const magic = await contract.isValidSignature(hashMessage(message), envelope.signature);
         signatureValid = String(magic).toLowerCase() === '0x1626ba7e';
-        signer = signatureValid ? envelope.walletAddress : signer;
+        signer = signatureValid ? walletAddress : signer;
       } catch (error) {
         evmError = error;
       }
