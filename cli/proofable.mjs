@@ -1888,7 +1888,7 @@ async function runMount(options) {
     }
     if (applyResult) {
       for (const filePath of applyResult.written) {
-        logStep('ok', 'wrote', filePath);
+        logStep('ok', options.dryRun ? 'would write' : 'wrote', filePath);
       }
     } else if (!options.dryRun) {
       logStep('ok', 'wrote', path.join(cwd, '.proofable', 'mount.json'));
