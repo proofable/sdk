@@ -78,9 +78,12 @@ Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and s
 ```bash
 npx -y @proofable/sdk setup
 npx -y @proofable/sdk setup --access-key $PROOFABLE_ACCESS_KEY
+npx -y @proofable/sdk import <github-url|owner/name|folder>
 npx -y @proofable/sdk mount <agentId> --apply <host>
 npx -y @proofable/sdk doctor --live
 ```
+
+`import` brings an agent you already run: a GitHub repository, a folder, an MCP server URL, or an A2A agent card. One command creates it on your profile and mounts it into the current project. Its permissions expire in 30 days; change that with `--expires-at <date|never>`, or skip the mount with `--no-mount`. A terminal that is not signed in gets a browser link instead; sign it in with `npx -y @proofable/sdk auth --oauth`.
 
 `--apply` accepts `cursor`, `claude`, `codex`, `hermes`, `openclaw`, or `opencode`. VS Code uses `--apply cursor`. Setup steps: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup).
 
