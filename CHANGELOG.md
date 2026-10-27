@@ -168,7 +168,8 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 | [1.1.0](https://www.npmjs.com/package/@neus/sdk/v/1.1.0) | 2026-05-26 | First public SDK release on npm: OAuth-first setup, the CLI, public MCP tools including encrypted Vault secrets, and the Claude Code plugin with the trust workflow skill. |
 | [1.0.12](https://www.npmjs.com/package/@neus/sdk/v/1.0.12) | 2026-05-26 | First `@neus/sdk` release with the hosted MCP CLI (`neus setup`, `neus auth`, import/export) and the OAuth browser flow. |
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/proofable/sdk/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/proofable/sdk/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/proofable/sdk/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/proofable/sdk/compare/v0.1.4...v0.1.5
