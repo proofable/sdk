@@ -45,6 +45,14 @@ Show what my agents are allowed to do.
 
 The agent lives on the signed-in profile by default. Ask for a dedicated spend account only when the agent should pay from its own account. Open **Connections** on proofable.me to link apps.
 
+Already running an agent? Bring it as it is: a GitHub repository, an MCP server URL, an A2A agent card, or a package. Secrets stay out of the import.
+
+```bash
+proofable import <repository, URL, or folder>
+```
+
+It prints a link to register the agent's identity. To let others run the agent as a service, create an AI service listing at https://proofable.me/profile/listings/new.
+
 Optional project mount (`cursor`, `claude`, `codex`, `hermes`, `openclaw`, or `opencode`; VS Code uses `cursor`):
 
 ```bash
