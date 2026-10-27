@@ -51,7 +51,7 @@ Already running an agent? Bring it as it is: a GitHub repository, an MCP server 
 proofable import <repository, URL, or folder>
 ```
 
-It prints a link to register the agent's identity. To let others run the agent as a service, create an AI service listing at https://proofable.me/profile/portals/new.
+It prints a link to register the agent's identity. To let others run the agent as a service, create an AI service listing at https://proofable.me/profile/listings/new.
 
 Optional project mount (`cursor`, `claude`, `codex`, `hermes`, `openclaw`, or `opencode`; VS Code uses `cursor`):
 

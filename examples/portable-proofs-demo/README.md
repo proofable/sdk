@@ -43,7 +43,7 @@ import { VerifyGate } from '@proofable/sdk/widgets';
 
 ## Use real gates
 
-The demo derives sample gate ids from each claim. Before connecting to the live API, publish listings in [Profile → Listings](https://proofable.me/profile?tab=portals) and pass the real `gateId` into `VerifyGate` and `gateCheck`.
+The demo derives sample gate ids from each claim. Before connecting to the live API, publish listings in [Profile → Listings](https://proofable.me/profile?tab=listings) and pass the real `gateId` into `VerifyGate` and `gateCheck`.
 
 ## Store the proof
 
