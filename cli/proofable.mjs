@@ -3083,7 +3083,10 @@ async function main() {
     printUsage(1);
   } catch (error) {
     process.stderr.write(`${error?.message || 'Unknown error'}\n`);
-    process.exit(1);
+    // process.exit() right after fetch() aborts Node on Windows (nodejs/node#56645), so the
+    // exit code is set and the event loop drains; the unref'd timer only ends a stuck request.
+    process.exitCode = 1;
+    setTimeout(() => process.exit(1), 2000).unref();
   }
 }
 
