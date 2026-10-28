@@ -15,6 +15,7 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ### Fixed
 
+- **`proofable auth --oauth` signs in the CLI and leaves your editors alone.** It no longer writes its short-lived token into Cursor, VS Code or Claude, which keep the sign-in `proofable setup` gave them, and it works on a machine with none of them installed. Name an editor with `--client` to write the token there too.
 - **Long agent instructions are never dropped without a word.** A terminal that is not signed in is sent to the browser import. When a step has to finish in the browser and the link cannot carry the instructions, the CLI says so and tells you to paste them there.
 
 ## [0.1.9] - 2026-10-27

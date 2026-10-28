@@ -2398,8 +2398,11 @@ async function runAuthBrowser(options) {
   if (scope !== 'user') {
     throw new Error('Browser auth only supports user scope. Remove --project flag.');
   }
-  const clients = resolveClients(scope, options.clients);
-  ensureClientSelection(scope, clients);
+  // `--oauth` signs in this CLI. Editors keep their own sign-in from `setup`: a short-lived
+  // token written into their config stops working when it expires. Name a client to opt in.
+  const clients = Array.isArray(options.clients) && options.clients.length > 0
+    ? resolveClients(scope, options.clients)
+    : [];
   const browserManagedClients = clients.filter(client => client !== 'codex');
   const hostManagedClients = clients.filter(client => client === 'codex');
   const cwd = process.cwd();
