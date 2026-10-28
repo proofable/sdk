@@ -4,7 +4,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { buildRuntimeBundle } from '../runtime-mount.js';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -768,6 +769,201 @@ describe('proofable CLI', () => {
     expect(stdout).toContain('import <src>');
     expect(stdout).toContain('hermes');
     expect(stdout).toContain('openclaw');
+    expect(stdout).toContain('--expires-at');
+    expect(stdout).toContain('--no-mount');
   });
 
+});
+
+describe('proofable import', () => {
+  const WALLET = '0x1111111111111111111111111111111111111111';
+  const LONG_INSTRUCTIONS = `Review pull requests and report risks.\n${'Follow the release checklist line by line. '.repeat(200)}`.trim();
+  const fetchMockUrl = pathToFileURL(path.join(__dirname, 'fixtures', 'import-fetch-mock.mjs')).href;
+
+  function importCommit() {
+    const mcpCreateArgs = {
+      agentId: 'repo-reviewer',
+      agentLabel: 'Repo Reviewer',
+      agentType: 'agent',
+      description: 'Reviews pull requests.',
+      instructions: LONG_INSTRUCTIONS,
+      capabilities: ['proofs']
+    };
+    return {
+      previewId: 'preview-1',
+      identityPrefill: { ...mcpCreateArgs },
+      // Over the link budget, so the server leaves the instructions out of the link.
+      hostedVerifyUrl:
+        'https://proofable.me/verify?verifiers=agent-identity&agentId=repo-reviewer&agentLabel=Repo+Reviewer&returnTo=%2Fprofile%3Ftab%3Dagents',
+      hostedVerifyUrlOmitsInstructions: true,
+      mcpCreateArgs,
+      runtimeHandoff: {
+        origin: 'cursor',
+        applyHost: 'cursor',
+        apply: 'npx -y @proofable/sdk mount repo-reviewer --apply cursor'
+      }
+    };
+  }
+
+  function mountedBundle(expiresAt) {
+    return buildRuntimeBundle({
+      identity: {
+        qHash: `0x${'a'.repeat(64)}`,
+        agentId: 'repo-reviewer',
+        agentWallet: WALLET,
+        agentLabel: 'Repo Reviewer',
+        instructions: LONG_INSTRUCTIONS
+      },
+      delegation: {
+        qHash: `0x${'b'.repeat(64)}`,
+        controllerWallet: WALLET,
+        agentWallet: WALLET,
+        agentId: 'repo-reviewer',
+        allowedActions: ['read_context', 'read_proofs', 'execute_jobs'],
+        expiresAt
+      },
+      controllerWallet: WALLET
+    });
+  }
+
+  function importReplies({ create, bundle } = {}) {
+    return {
+      '/api/v1/agents/import/preview': {
+        body: {
+          success: true,
+          preview: {
+            schema: 'proofable.agent-import.preview.v1',
+            previewId: 'preview-1',
+            identity: { label: 'Repo Reviewer', agentId: 'repo-reviewer' },
+            excludedSecrets: []
+          }
+        }
+      },
+      '/api/v1/agents/import/commit': { body: { success: true, commit: importCommit() } },
+      'mcp:initialize': { protocolVersion: '2025-11-25', capabilities: {} },
+      'mcp:proofable_agent_create': create ?? {
+        status: 'ok',
+        linked: true,
+        path: 'session_auto_complete',
+        agent: { agentId: 'repo-reviewer', agentWallet: WALLET, controllerWallet: WALLET, preset: 'assistant' },
+        proofs: { identity: { qHash: `0x${'a'.repeat(64)}` }, delegation: { qHash: `0x${'b'.repeat(64)}` } }
+      },
+      ...(bundle ? { 'mcp:proofable_agent_mount': bundle } : {})
+    };
+  }
+
+  async function makeImportContext({ accessKey = 'npk_test_import', replies = importReplies() } = {}) {
+    const context = await makeCliContext();
+    const repliesPath = path.join(context.workspaceDir, '..', 'fetch-replies.json');
+    const logPath = path.join(context.workspaceDir, '..', 'fetch-log.jsonl');
+    await writeJson(repliesPath, replies);
+    context.env = {
+      ...context.env,
+      PROOFABLE_ACCESS_KEY: accessKey,
+      PROOFABLE_TEST_FETCH_REPLIES: repliesPath,
+      PROOFABLE_TEST_FETCH_LOG: logPath
+    };
+    const agentDir = path.join(context.workspaceDir, 'agent-src');
+    await fs.mkdir(agentDir, { recursive: true });
+    await fs.writeFile(path.join(agentDir, 'AGENTS.md'), LONG_INSTRUCTIONS, 'utf8');
+    return { ...context, logPath };
+  }
+
+  async function runImportCli(args, context) {
+    return execFileAsync(process.execPath, ['--import', fetchMockUrl, cliPath, 'import', ...args], {
+      encoding: 'utf8',
+      cwd: context.workspaceDir,
+      env: context.env
+    });
+  }
+
+  async function readFetchLog(context) {
+    const raw = await fs.readFile(context.logPath, 'utf8').catch(() => '');
+    return raw.split('\n').filter(Boolean).map(line => JSON.parse(line));
+  }
+
+  it('creates the agent with the full import record and no expiry by default, then mounts it', async () => {
+    const context = await makeImportContext({ replies: importReplies({ bundle: mountedBundle(0) }) });
+    const { stderr } = await runImportCli(['agent-src'], context);
+
+    const calls = await readFetchLog(context);
+    const create = calls.find(call => call.key === 'mcp:proofable_agent_create');
+    expect(create).toBeTruthy();
+    expect(create.headers.authorization).toBe('Bearer npk_test_import');
+    const { expiresAt: sentExpiresAt, ...sentArgs } = create.body.params.arguments;
+    expect(sentArgs).toEqual(importCommit().mcpCreateArgs);
+    expect(sentArgs.instructions).toHaveLength(LONG_INSTRUCTIONS.length);
+    expect(sentExpiresAt).toBe(0);
+
+    const rulesPath = path.join(context.workspaceDir, '.cursor', 'rules', 'proofable-agent-repo-reviewer.mdc');
+    await expect(fs.stat(rulesPath)).resolves.toBeTruthy();
+    expect(stderr).toContain('Repo Reviewer');
+    expect(stderr).toContain('Allowed: read context, read proofs, execute jobs');
+    expect(stderr).toContain('Expires: never');
+    expect(stderr).toContain('Agent page: https://proofable.me/agent/repo-reviewer');
+    expect(stderr).not.toContain('/verify?');
+  });
+
+  it('passes a chosen expiry through and skips the mount with --no-mount', async () => {
+    const expiresAt = Date.parse('2099-12-31');
+    const context = await makeImportContext({ replies: importReplies({ bundle: mountedBundle(expiresAt) }) });
+    const { stdout } = await runImportCli(['agent-src', '--expires-at', '2099-12-31', '--no-mount', '--json'], context);
+
+    const create = (await readFetchLog(context)).find(call => call.key === 'mcp:proofable_agent_create');
+    expect(create.body.params.arguments.expiresAt).toBe(expiresAt);
+    const payload = JSON.parse(stdout);
+    expect(payload.created).toBe(true);
+    expect(payload.expiresAt).toBe(expiresAt);
+    expect(payload.mounted).toBeNull();
+    await expect(fs.stat(path.join(context.workspaceDir, '.proofable'))).rejects.toThrow();
+  });
+
+  it('falls back to the browser import when the terminal is not signed in', async () => {
+    const context = await makeImportContext({ accessKey: '' });
+    const { stdout } = await runImportCli(['agent-src', '--json'], context);
+
+    expect(await readFetchLog(context)).toEqual([]);
+    const payload = JSON.parse(stdout);
+    expect(payload.created).toBe(false);
+    expect(payload.signedIn).toBe(false);
+    expect(payload.browserUrl).toBe('https://proofable.me/profile/agents/new?import=1');
+    expect(payload.signInCommand).toBe('npx -y @proofable/sdk auth --oauth');
+  });
+
+  it('says when the browser link leaves out long instructions instead of dropping them silently', async () => {
+    const context = await makeImportContext({
+      replies: importReplies({
+        create: {
+          status: 'signatures_required',
+          path: 'signatures_required',
+          message: 'Agent "repo-reviewer" setup is in progress.'
+        }
+      })
+    });
+    const error = await runImportCli(['agent-src'], context).then(
+      () => null,
+      failure => failure
+    );
+
+    expect(error?.code).toBe(1);
+    const create = (await readFetchLog(context)).find(call => call.key === 'mcp:proofable_agent_create');
+    expect(create.body.params.arguments.instructions).toBe(LONG_INSTRUCTIONS);
+    expect(error.stderr).toContain('Finish in the browser: https://proofable.me/verify?verifiers=agent-identity');
+    expect(error.stderr).toContain(
+      `leaves out the agent's instructions (${LONG_INSTRUCTIONS.length.toLocaleString('en-US')} characters`
+    );
+  });
+
+  it('previews without creating anything on --dry-run', async () => {
+    const context = await makeImportContext();
+    const { stdout } = await runImportCli(['agent-src', '--expires-at', 'never', '--dry-run', '--json'], context);
+
+    const keys = (await readFetchLog(context)).map(call => call.key);
+    expect(keys).toEqual(['/api/v1/agents/import/preview', '/api/v1/agents/import/commit']);
+    const payload = JSON.parse(stdout);
+    expect(payload.dryRun).toBe(true);
+    expect(payload.created).toBe(false);
+    expect(payload.createArgs.instructions).toBe(LONG_INSTRUCTIONS);
+    expect(payload.createArgs.expiresAt).toBe(0);
+  });
 });

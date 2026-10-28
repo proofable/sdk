@@ -1000,6 +1000,8 @@ function parseArgs(argv) {
     apply: '',
     agentTarget: '',
     importTarget: '',
+    noMount: false,
+    expiresAt: '',
     gateCommand: '',
     subject: '',
     gateTarget: ''
@@ -1063,6 +1065,17 @@ function parseArgs(argv) {
       options.importTarget = token;
       continue;
     }
+    if (token === '--no-mount') {
+      options.noMount = true;
+      continue;
+    }
+    if (token === '--expires-at') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--expires-at requires a value (a date, Unix milliseconds, or never)');
+      options.expiresAt = value.trim();
+      index += 1;
+      continue;
+    }
     if (token === '--subject') {
       const value = argv[index + 1];
       if (!value) throw new Error('--subject requires a value');
@@ -1106,7 +1119,7 @@ function printUsage(exitCode = 0) {
     '  examples      Show assistant prompts to try after install',
     '  doctor        Deep check: config status, profile connection, and live MCP context',
     '  mount <id>    Connect a Trusted Agent to a project or runtime',
-    '  import <src>  Inspect a package, repo, card, or runtime link',
+    '  import <src>  Create an agent from a repo (URL or owner/name), folder, MCP URL, or agent card, then mount it',
     '  gate check <file> --subject <id>   Check a Gate Policy file against a subject',
     '  gate get <gateId>                  Read a published gate snapshot',
     '  help          Show this message',
@@ -1119,6 +1132,8 @@ function printUsage(exitCode = 0) {
     '  --live                   Run live MCP checks (uses your client credential or --access-key)',
     '  --agent <agentId>        Agent id for mount (also accepted positionally: `proofable mount <agentId>`)',
     '  --apply <cursor|claude|codex|hermes|openclaw|opencode>  Write mounted agent rules to the current project',
+    '  --expires-at <date|ms|never>  When an imported agent\'s permissions end (default: never)',
+    '  --no-mount               Import without writing the agent into the current project',
     '  --json                   Print JSON output',
     '  --dry-run                Preview changes without writing files'
   ];
@@ -1935,16 +1950,23 @@ function collectImportFiles(dir, into, root = dir) {
   }
 }
 
+const IMPORT_USAGE =
+  'Usage: proofable import <url|owner/name|path> [--apply <host>] [--expires-at <date|ms|never>] [--no-mount] [--dry-run] [--json]';
+
 function readImportSource(target) {
   const value = String(target || '').trim();
   if (!value) {
-    throw new Error('Usage: proofable import <path|url> [--json]');
+    throw new Error(IMPORT_USAGE);
   }
   if (/^https?:\/\//i.test(value)) {
     return { url: value };
   }
   const resolved = path.resolve(value);
   if (!fs.existsSync(resolved)) {
+    // `owner/name` with no matching local folder is a GitHub repository.
+    if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)) {
+      return { url: `https://github.com/${value}` };
+    }
     throw new Error(`Source not found: ${value}`);
   }
   const stat = fs.lstatSync(resolved);
@@ -1998,23 +2020,100 @@ async function postAgentImport(pathname, body, accessKey, signal) {
   return json;
 }
 
+const IMPORT_BROWSER_URL = `${PROOFABLE_APP_URL}/profile/agents/new?import=1`;
+
+/**
+ * --expires-at as Unix ms. An imported agent's permissions never expire unless the
+ * caller sets a date, so no flag, `never` and `0` all return 0 (no expiry).
+ */
+function resolveImportExpiresAt(raw, now = Date.now()) {
+  const value = String(raw || '').trim();
+  if (!value || value === '0' || value.toLowerCase() === 'never') return 0;
+  const ms = /^\d+$/.test(value) ? Number(value) : Date.parse(value);
+  if (!Number.isFinite(ms) || ms <= now) {
+    throw new Error('--expires-at must be a future date (for example 2026-12-31), Unix milliseconds, or never.');
+  }
+  return ms;
+}
+
+function formatImportExpiry(expiresAt) {
+  const ms = Number(expiresAt);
+  if (!Number.isFinite(ms) || ms <= 0) return 'never';
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** True when the commit's browser link does not carry the agent's full instructions. */
+function importLinkOmitsInstructions(commit) {
+  const instructions = String(commit?.mcpCreateArgs?.instructions || commit?.identityPrefill?.instructions || '').trim();
+  if (!instructions || !commit?.hostedVerifyUrl) return false;
+  if (commit.hostedVerifyUrlOmitsInstructions === true) return true;
+  try {
+    const carried = new URL(commit.hostedVerifyUrl).searchParams.get('prefillInstructions') || '';
+    return carried.trim() !== instructions;
+  } catch {
+    return true;
+  }
+}
+
+function describeAgentPermissions(bundle, created) {
+  const actions = bundle?.delegation?.allowedActions;
+  if (Array.isArray(actions) && actions.length > 0) {
+    return actions.map(action => String(action).replace(/_/g, ' ')).join(', ');
+  }
+  const preset = created?.agent?.preset;
+  return preset ? `the ${preset} preset` : 'see the agent page';
+}
+
 async function runImport(options) {
   const cwd = process.cwd();
   const scope = resolveScope(options);
-  const accessKey = await resolveLiveAccessKeyWithRefresh(options, scope, cwd);
   const target = String(options.importTarget || '').trim();
   if (!target) {
-    throw new Error('Usage: proofable import <path|url> [--json]');
+    throw new Error(IMPORT_USAGE);
   }
-  if (!accessKey) {
-    throw new Error('Credential required. Run `npx -y @proofable/sdk auth --oauth` or pass --access-key.');
+  const expiresAt = resolveImportExpiresAt(options.expiresAt);
+  const requestedApply = String(options.apply || '').trim();
+  if (requestedApply && !normalizeApplyHost(requestedApply)) {
+    throw new Error(`--apply must be ${APPLY_HOSTS.join(', ')}`);
   }
-
   const source = readImportSource(target);
+  const accessKey = await resolveLiveAccessKeyWithRefresh(options, scope, cwd);
+
+  // Reading a source needs a signed-in caller, so an unsigned terminal hands off to the
+  // browser import, which signs in and reads the source itself.
+  const browserFallback = () => {
+    const payload = {
+      command: 'import',
+      created: false,
+      signedIn: false,
+      browserUrl: IMPORT_BROWSER_URL,
+      signInCommand: 'npx -y @proofable/sdk auth --oauth'
+    };
+    if (options.json) {
+      printJson(payload);
+      return payload;
+    }
+    emitCliBanner(options);
+    writeCliLine(paint('import', 'green'));
+    logStep('warn', 'sign in', 'This terminal is not signed in to Proofable.');
+    writeGuidanceLine(`Import ${source.url || target} in the browser: ${IMPORT_BROWSER_URL}`);
+    writeGuidanceLine(`Or sign in here and run this again: ${payload.signInCommand}`);
+    writeCliLine('');
+    return payload;
+  };
+  if (!accessKey) return browserFallback();
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), 60000);
   try {
-    const previewJson = await postAgentImport('/api/v1/agents/import/preview', source, accessKey, controller.signal);
+    let previewJson;
+    try {
+      previewJson = await postAgentImport('/api/v1/agents/import/preview', source, accessKey, controller.signal);
+    } catch (error) {
+      // A stored sign-in the server no longer accepts gets the same browser hand-off.
+      if (error?.status === 401) return browserFallback();
+      throw error;
+    }
     const preview = previewJson.preview;
     if (!preview) {
       throw new Error('Inspect did not return a preview.');
@@ -2026,29 +2125,125 @@ async function runImport(options) {
       controller.signal
     );
     const commit = commitJson.commit;
-    const payload = {
-      command: 'import',
-      preview,
-      commit,
-      hostedVerifyUrl: commit?.hostedVerifyUrl || null,
-      apply: commit?.runtimeHandoff?.apply || null
-    };
+    if (!commit?.mcpCreateArgs?.agentId) {
+      throw new Error('Import did not return an agent to create.');
+    }
+    const agentLabel = commit.mcpCreateArgs.agentLabel || preview.identity?.label || target;
+    // The whole record rides in the request body, so long instructions arrive intact.
+    const createArgs = { ...commit.mcpCreateArgs, expiresAt };
+    const applyHost =
+      normalizeApplyHost(requestedApply) || normalizeApplyHost(commit.runtimeHandoff?.applyHost) || null;
+    const mountTarget = options.noMount ? null : applyHost || MOUNT_MANIFEST_RELATIVE;
+    const payload = { command: 'import', preview, commit, createArgs };
+
+    if (options.dryRun) {
+      Object.assign(payload, { dryRun: true, created: false, mountTarget });
+      if (options.json) {
+        printJson(payload);
+        return payload;
+      }
+      emitCliBanner(options);
+      writeCliLine(paint('import', 'green'));
+      logStep('ok', 'agent', agentLabel);
+      writeGuidanceLine(`Would create it. Expires: ${formatImportExpiry(expiresAt)}`);
+      if (mountTarget) {
+        writeGuidanceLine(applyHost ? `Would mount it for ${applyHost}` : `Would write ${MOUNT_MANIFEST_RELATIVE}`);
+      }
+      writeCliLine('');
+      return payload;
+    }
+
+    const { sessionId } = await initializeMcpSession(accessKey, controller.signal);
+    const callTool = args => callMcpTool({ ...args, accessKey, sessionId, signal: controller.signal });
+    const createCall = await callTool({ name: 'proofable_agent_create', args: createArgs });
+    const created = createCall.ok ? createCall.payload : null;
+
+    if (!created || created.error || created.linked !== true) {
+      // This terminal could not finish the agent; the browser link is the way on.
+      const omitsInstructions = importLinkOmitsInstructions(commit);
+      Object.assign(payload, {
+        created: false,
+        result: created,
+        hostedVerifyUrl: commit.hostedVerifyUrl || null,
+        hostedCheckoutUrl: created?.hostedCheckoutUrl || null,
+        linkOmitsInstructions: omitsInstructions
+      });
+      process.exitCode = 1;
+      if (options.json) {
+        printJson(payload);
+        return payload;
+      }
+      emitCliBanner(options);
+      writeCliLine(paint('import', 'green'));
+      logStep('warn', 'agent', `${agentLabel} was not created`);
+      writeGuidanceLine(String(created?.message || createCall.error || 'Proofable could not finish the agent here.'));
+      if (payload.hostedCheckoutUrl) {
+        writeGuidanceLine(`Complete billing: ${payload.hostedCheckoutUrl}`);
+      }
+      if (payload.hostedVerifyUrl) {
+        writeGuidanceLine(`Finish in the browser: ${payload.hostedVerifyUrl}`);
+      }
+      if (omitsInstructions) {
+        const count = String(createArgs.instructions || '').trim().length.toLocaleString('en-US');
+        writeGuidanceLine(
+          `That link leaves out the agent's instructions (${count} characters, more than a link can carry). Paste them on that page; run this again with --json to print them.`
+        );
+      }
+      writeCliLine('');
+      return payload;
+    }
+
+    const agentId = created.agent?.agentId || createArgs.agentId;
+    let bundle = null;
+    let mounted = null;
+    let mountError = '';
+    try {
+      bundle = await resolveRuntimeBundleFromMcp({ callMcpTool: callTool, accessKey, agentId, signal: controller.signal });
+      if (mountTarget) {
+        mounted = applyHost
+          ? applyRuntimeBundle(applyHost, bundle, cwd)
+          : { flavor: null, written: [writeMountManifest(bundle, cwd)] };
+      }
+    } catch (error) {
+      mountError = errorMessage(error);
+    }
+
+    const grantedExpiresAt = bundle?.delegation ? bundle.delegation.expiresAt : expiresAt;
+    const agentUrl = `${PROOFABLE_APP_URL}/agent/${encodeURIComponent(agentId)}`;
+    Object.assign(payload, {
+      created: true,
+      result: created,
+      agentId,
+      permissions: bundle?.delegation?.allowedActions || null,
+      expiresAt: grantedExpiresAt ?? null,
+      agentUrl,
+      mounted,
+      ...(mountError ? { mountError } : {})
+    });
     if (options.json) {
       printJson(payload);
       return payload;
     }
     emitCliBanner(options);
     writeCliLine(paint('import', 'green'));
-    logStep('ok', 'agent', commit?.identityPrefill?.agentLabel || preview.identity?.label || target);
+    logStep('ok', 'agent', agentLabel);
+    writeGuidanceLine(`Allowed: ${describeAgentPermissions(bundle, created)}`);
+    writeGuidanceLine(`Expires: ${formatImportExpiry(grantedExpiresAt)}`);
     if (preview.excludedSecrets?.length) {
       logStep('warn', 'secrets', 'Secrets were left out. Reconnect those apps next.');
     }
-    if (commit?.hostedVerifyUrl) {
-      writeGuidanceLine(`Register identity: ${commit.hostedVerifyUrl}`);
+    for (const filePath of mounted?.written || []) {
+      logStep('ok', 'wrote', filePath);
     }
-    if (commit?.runtimeHandoff?.apply) {
-      writeGuidanceLine(`Then connect the runtime: ${commit.runtimeHandoff.apply}`);
+    const mountCommand = `npx -y @proofable/sdk mount ${agentId} --apply ${applyHost || '<host>'}`;
+    if (mountError && mountTarget) {
+      logStep('warn', 'mount', 'Not mounted into this project.');
+      writeGuidanceLine(mountError);
+      writeGuidanceLine(`Mount it later: ${mountCommand}`);
+    } else if (mounted && !applyHost) {
+      writeGuidanceLine(`Add it to a host: ${mountCommand}`);
     }
+    writeGuidanceLine(`Agent page: ${agentUrl}`);
     writeCliLine('');
     return payload;
   } finally {
@@ -2203,8 +2398,11 @@ async function runAuthBrowser(options) {
   if (scope !== 'user') {
     throw new Error('Browser auth only supports user scope. Remove --project flag.');
   }
-  const clients = resolveClients(scope, options.clients);
-  ensureClientSelection(scope, clients);
+  // `--oauth` signs in this CLI. Editors keep their own sign-in from `setup`: a short-lived
+  // token written into their config stops working when it expires. Name a client to opt in.
+  const clients = Array.isArray(options.clients) && options.clients.length > 0
+    ? resolveClients(scope, options.clients)
+    : [];
   const browserManagedClients = clients.filter(client => client !== 'codex');
   const hostManagedClients = clients.filter(client => client === 'codex');
   const cwd = process.cwd();

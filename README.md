@@ -5,15 +5,53 @@ Add verification gates, reusable proof, and agent permissions to your app.
 [![npm](https://img.shields.io/npm/v/%40proofable%2Fsdk?label=%40proofable%2Fsdk&color=98C0EF)](https://www.npmjs.com/package/%40proofable%2Fsdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-Verify someone once, then reuse that proof on every later check.
-
 ## Start here
+
+Bring the agent you already run. Proofable gives it an ID tied to you and a list of what it may do.
+
+Requires Node.js 20 or later.
+
+**1. Connect and sign in**
+
+```bash
+npx -y @proofable/sdk setup
+npx -y @proofable/sdk auth --oauth
+```
+
+`setup` connects Proofable to the AI tools on this machine.
+`auth --oauth` signs this terminal in through your browser.
+
+**2. Import your agent**
+
+```bash
+npx -y @proofable/sdk import owner/name --apply claude
+```
+
+Point it at a GitHub repository (`owner/name` or its URL) or a folder.
+It creates the agent on your profile and writes it into this project.
+Name the tool with `--apply`. It takes `cursor`, `claude`, `codex`, `hermes`, `openclaw` or `opencode`, and VS Code uses `cursor`.
+
+**3. Use it**
+
+`import` prints what the agent may do, the files it wrote and the agent's page.
+Open this project in that tool. The agent's instructions and permissions are in those files.
+Its permissions never expire unless you pass `--expires-at <date>`.
+
+**Or let your coding agent do it**
+
+Paste this into Claude Code, Cursor or Codex.
+
+```text
+Set up Proofable for this project. Run `npx -y @proofable/sdk setup`. Then run `npx -y @proofable/sdk auth --oauth` and wait for me to sign in through the browser. Then run `npx -y @proofable/sdk import . --apply <host>`, replacing <host> with claude, cursor or codex to match the tool you run in. Show me what the agent may do and its page link.
+```
+
+## Add a check to your app
+
+Verify someone once, then reuse that proof on every later check.
 
 ```bash
 npm install @proofable/sdk
 ```
-
-Requires Node.js 20 or later.
 
 **Send a person to verify**
 
@@ -76,13 +114,17 @@ import { VerifyGate } from '@proofable/sdk/widgets';
 Interactive clients add `https://mcp.proofable.me/mcp`, click **Connect**, and sign in. Servers and CI send a server key from `PROOFABLE_ACCESS_KEY` as a Bearer token.
 
 ```bash
-npx -y @proofable/sdk setup
 npx -y @proofable/sdk setup --access-key $PROOFABLE_ACCESS_KEY
+npx -y @proofable/sdk import <github-url|owner/name|folder> --dry-run
 npx -y @proofable/sdk mount <agentId> --apply <host>
 npx -y @proofable/sdk doctor --live
 ```
 
-`--apply` accepts `cursor`, `claude`, `codex`, `hermes`, `openclaw`, or `opencode`. VS Code uses `--apply cursor`. Setup steps: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup).
+`import` also reads an MCP server URL or an A2A agent card.
+`--dry-run` shows what it would create. `--no-mount` creates the agent without writing it into the project.
+A terminal that is not signed in gets a browser link instead.
+
+`mount` writes an agent you already have into this project for another tool. Setup steps: [docs.proofable.me/mcp/setup](https://docs.proofable.me/mcp/setup).
 
 ## Core methods
 
