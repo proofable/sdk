@@ -776,7 +776,6 @@ describe('proofable CLI', () => {
 });
 
 describe('proofable import', () => {
-  const DAY_MS = 24 * 60 * 60 * 1000;
   const WALLET = '0x1111111111111111111111111111111111111111';
   const LONG_INSTRUCTIONS = `Review pull requests and report risks.\n${'Follow the release checklist line by line. '.repeat(200)}`.trim();
   const fetchMockUrl = pathToFileURL(path.join(__dirname, 'fixtures', 'import-fetch-mock.mjs')).href;
@@ -883,12 +882,9 @@ describe('proofable import', () => {
     return raw.split('\n').filter(Boolean).map(line => JSON.parse(line));
   }
 
-  it('creates the agent with the full import record and a 30-day expiry, then mounts it', async () => {
-    const expiresAt = Date.now() + 30 * DAY_MS;
-    const context = await makeImportContext({ replies: importReplies({ bundle: mountedBundle(expiresAt) }) });
-    const before = Date.now();
+  it('creates the agent with the full import record and no expiry by default, then mounts it', async () => {
+    const context = await makeImportContext({ replies: importReplies({ bundle: mountedBundle(0) }) });
     const { stderr } = await runImportCli(['agent-src'], context);
-    const after = Date.now();
 
     const calls = await readFetchLog(context);
     const create = calls.find(call => call.key === 'mcp:proofable_agent_create');
@@ -897,26 +893,27 @@ describe('proofable import', () => {
     const { expiresAt: sentExpiresAt, ...sentArgs } = create.body.params.arguments;
     expect(sentArgs).toEqual(importCommit().mcpCreateArgs);
     expect(sentArgs.instructions).toHaveLength(LONG_INSTRUCTIONS.length);
-    expect(sentExpiresAt).toBeGreaterThanOrEqual(before + 30 * DAY_MS);
-    expect(sentExpiresAt).toBeLessThanOrEqual(after + 30 * DAY_MS);
+    expect(sentExpiresAt).toBe(0);
 
     const rulesPath = path.join(context.workspaceDir, '.cursor', 'rules', 'proofable-agent-repo-reviewer.mdc');
     await expect(fs.stat(rulesPath)).resolves.toBeTruthy();
     expect(stderr).toContain('Repo Reviewer');
     expect(stderr).toContain('Allowed: read context, read proofs, execute jobs');
-    expect(stderr).toContain(`Expires: ${new Date(expiresAt).toISOString().slice(0, 10)}`);
+    expect(stderr).toContain('Expires: never');
     expect(stderr).toContain('Agent page: https://proofable.me/agent/repo-reviewer');
     expect(stderr).not.toContain('/verify?');
   });
 
   it('passes a chosen expiry through and skips the mount with --no-mount', async () => {
-    const context = await makeImportContext({ replies: importReplies({ bundle: mountedBundle(0) }) });
-    const { stdout } = await runImportCli(['agent-src', '--expires-at', 'never', '--no-mount', '--json'], context);
+    const expiresAt = Date.parse('2099-12-31');
+    const context = await makeImportContext({ replies: importReplies({ bundle: mountedBundle(expiresAt) }) });
+    const { stdout } = await runImportCli(['agent-src', '--expires-at', '2099-12-31', '--no-mount', '--json'], context);
 
     const create = (await readFetchLog(context)).find(call => call.key === 'mcp:proofable_agent_create');
-    expect(create.body.params.arguments.expiresAt).toBe(0);
+    expect(create.body.params.arguments.expiresAt).toBe(expiresAt);
     const payload = JSON.parse(stdout);
     expect(payload.created).toBe(true);
+    expect(payload.expiresAt).toBe(expiresAt);
     expect(payload.mounted).toBeNull();
     await expect(fs.stat(path.join(context.workspaceDir, '.proofable'))).rejects.toThrow();
   });
@@ -959,7 +956,7 @@ describe('proofable import', () => {
 
   it('previews without creating anything on --dry-run', async () => {
     const context = await makeImportContext();
-    const { stdout } = await runImportCli(['agent-src', '--dry-run', '--json'], context);
+    const { stdout } = await runImportCli(['agent-src', '--expires-at', 'never', '--dry-run', '--json'], context);
 
     const keys = (await readFetchLog(context)).map(call => call.key);
     expect(keys).toEqual(['/api/v1/agents/import/preview', '/api/v1/agents/import/commit']);
@@ -967,5 +964,6 @@ describe('proofable import', () => {
     expect(payload.dryRun).toBe(true);
     expect(payload.created).toBe(false);
     expect(payload.createArgs.instructions).toBe(LONG_INSTRUCTIONS);
+    expect(payload.createArgs.expiresAt).toBe(0);
   });
 });

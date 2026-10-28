@@ -11,7 +11,7 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ### Changed
 
-- **`proofable import` creates the agent in one step.** A signed-in terminal now creates the agent on your profile with its full instructions and mounts it into the current project, for the host the source names or the one you pass with `--apply`. Permissions expire in 30 days unless you pass `--expires-at <date|never>`; `--no-mount` skips the mount. It prints the agent's name, what it may do, when that expires, and its agent page. `owner/name` reads a GitHub repository, and `--dry-run` shows what would happen without creating anything.
+- **`proofable import` creates the agent in one step.** A signed-in terminal now creates the agent on your profile with its full instructions and mounts it into the current project, for the host the source names or the one you pass with `--apply`. Its permissions never expire unless you set an end with `--expires-at` (a date or Unix milliseconds); `--no-mount` skips the mount. It prints the agent's name, what it may do, when its permissions end, and its agent page. `owner/name` reads a GitHub repository, and `--dry-run` shows what would happen without creating anything.
 
 ### Fixed
 

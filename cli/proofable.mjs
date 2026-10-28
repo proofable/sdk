@@ -1132,7 +1132,7 @@ function printUsage(exitCode = 0) {
     '  --live                   Run live MCP checks (uses your client credential or --access-key)',
     '  --agent <agentId>        Agent id for mount (also accepted positionally: `proofable mount <agentId>`)',
     '  --apply <cursor|claude|codex|hermes|openclaw|opencode>  Write mounted agent rules to the current project',
-    '  --expires-at <date|never>  When an imported agent\'s permissions end (default: 30 days from now)',
+    '  --expires-at <date|ms|never>  When an imported agent\'s permissions end (default: never)',
     '  --no-mount               Import without writing the agent into the current project',
     '  --json                   Print JSON output',
     '  --dry-run                Preview changes without writing files'
@@ -1951,7 +1951,7 @@ function collectImportFiles(dir, into, root = dir) {
 }
 
 const IMPORT_USAGE =
-  'Usage: proofable import <url|owner/name|path> [--apply <host>] [--expires-at <date|never>] [--no-mount] [--dry-run] [--json]';
+  'Usage: proofable import <url|owner/name|path> [--apply <host>] [--expires-at <date|ms|never>] [--no-mount] [--dry-run] [--json]';
 
 function readImportSource(target) {
   const value = String(target || '').trim();
@@ -2020,16 +2020,15 @@ async function postAgentImport(pathname, body, accessKey, signal) {
   return json;
 }
 
-// An imported agent's permissions end after 30 days unless --expires-at says otherwise,
-// the same default as the agent composer on proofable.me.
-const IMPORT_DEFAULT_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
 const IMPORT_BROWSER_URL = `${PROOFABLE_APP_URL}/profile/agents/new?import=1`;
 
-/** --expires-at as Unix ms; 0 means the permissions do not expire. */
+/**
+ * --expires-at as Unix ms. An imported agent's permissions never expire unless the
+ * caller sets a date, so no flag, `never` and `0` all return 0 (no expiry).
+ */
 function resolveImportExpiresAt(raw, now = Date.now()) {
   const value = String(raw || '').trim();
-  if (!value) return now + IMPORT_DEFAULT_EXPIRY_MS;
-  if (value === '0' || value.toLowerCase() === 'never') return 0;
+  if (!value || value === '0' || value.toLowerCase() === 'never') return 0;
   const ms = /^\d+$/.test(value) ? Number(value) : Date.parse(value);
   if (!Number.isFinite(ms) || ms <= now) {
     throw new Error('--expires-at must be a future date (for example 2026-12-31), Unix milliseconds, or never.');
@@ -2146,7 +2145,7 @@ async function runImport(options) {
       emitCliBanner(options);
       writeCliLine(paint('import', 'green'));
       logStep('ok', 'agent', agentLabel);
-      writeGuidanceLine(`Would create it with permissions that expire: ${formatImportExpiry(expiresAt)}`);
+      writeGuidanceLine(`Would create it. Expires: ${formatImportExpiry(expiresAt)}`);
       if (mountTarget) {
         writeGuidanceLine(applyHost ? `Would mount it for ${applyHost}` : `Would write ${MOUNT_MANIFEST_RELATIVE}`);
       }
