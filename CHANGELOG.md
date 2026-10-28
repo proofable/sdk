@@ -9,6 +9,8 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-28
+
 ### Changed
 
 - **`proofable import` creates the agent in one step.** A signed-in terminal now creates the agent on your profile with its full instructions and mounts it into the current project, for the host the source names or the one you pass with `--apply`. Its permissions never expire unless you set an end with `--expires-at` (a date or Unix milliseconds); `--no-mount` skips the mount. It prints the agent's name, what it may do, when its permissions end, and its agent page. `owner/name` reads a GitHub repository, and `--dry-run` shows what would happen without creating anything.
@@ -183,7 +185,8 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 | [1.1.0](https://www.npmjs.com/package/@neus/sdk/v/1.1.0) | 2026-05-26 | First public SDK release on npm: OAuth-first setup, the CLI, public MCP tools including encrypted Vault secrets, and the Claude Code plugin with the trust workflow skill. |
 | [1.0.12](https://www.npmjs.com/package/@neus/sdk/v/1.0.12) | 2026-05-26 | First `@neus/sdk` release with the hosted MCP CLI (`neus setup`, `neus auth`, import/export) and the OAuth browser flow. |
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/proofable/sdk/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/proofable/sdk/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/proofable/sdk/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/proofable/sdk/compare/v0.1.6...v0.1.7
