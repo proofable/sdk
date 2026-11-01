@@ -33,6 +33,27 @@ const FALLBACK_PUBLIC_VERIFIER_CATALOG = {
 
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const WALLET_LINK_RELATIONSHIP_TYPES = new Set(['primary', 'personal', 'org', 'affiliate', 'agent', 'linked']);
+const USAGE_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** One Server-Sent Event block (`event:` and `data:` lines) as `{ event, data }`, or null. */
+function parseSseBlock(block) {
+  let event = 'message';
+  const data = [];
+  for (const line of String(block).split('\n')) {
+    if (!line || line.startsWith(':')) continue;
+    const at = line.indexOf(':');
+    const field = at < 0 ? line : line.slice(0, at);
+    const value = at < 0 ? '' : line.slice(at + 1).replace(/^ /, '');
+    if (field === 'event') event = value;
+    else if (field === 'data') data.push(value);
+  }
+  if (data.length === 0) return null;
+  try {
+    return { event, data: JSON.parse(data.join('\n')) };
+  } catch {
+    return null;
+  }
+}
 
 function normalizeWalletLinkRelationshipType(value) {
   const normalized = String(value || '').trim().toLowerCase();
@@ -2076,6 +2097,111 @@ export class ProofableClient {
     }
 
     return accounts[0];
+  }
+
+  /**
+   * Talk to a hosted agent. One chat turn runs on Proofable as the agent you name: its own
+   * instructions and skills, under the delegation you signed for it, with every tool call
+   * checked against that delegation before it runs. Nothing to deploy and no machine to keep.
+   *
+   * Streams each event to `onEvent(type, data)` as it arrives and resolves with the `final`
+   * event: `outcome`, `answer`, `citations` (the records the agent read, each one openable
+   * at proofable.me/proof/<qHash>), `agent`, `usage` and, for a hosted turn, `credits`.
+   *
+   * Authenticate the client with a server key (`apiKey`) on a server, or a signed-in
+   * session token in a browser. Never ship a server key in browser code.
+   *
+   * @param {object} params
+   * @param {Array<{ role: 'user'|'assistant', content: string }>} params.messages  the last one from the user
+   * @param {string} [params.agentId]       run as this agent; omit to run as yourself
+   * @param {string} [params.agentWallet]   the agent's account, when two of yours share an agentId
+   * @param {string} [params.systemPrompt]  context from your app, passed to the agent as data
+   * @param {string} [params.model]         'default' (the default) or 'advanced'; with `provider`, that provider's model id
+   * @param {string} [params.provider]      run on your own model key instead of hosted inference
+   * @param {string} [params.providerSecretProofQHash]  the vault secret holding that key
+   * @param {string} [params.turnId]
+   * @param {(type: string, data: object) => void} [params.onEvent]
+   * @param {AbortSignal} [params.signal]
+   * @returns {Promise<object>} the `final` event
+   */
+  async agentChat(params = {}) {
+    const { onEvent, signal, ...body } = params || {};
+    if (!Array.isArray(body.messages) || body.messages.length === 0) {
+      throw new ValidationError('messages must be a non-empty array, the last one from the user', 'messages', body.messages);
+    }
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}/api/v1/agent/chat/turn`, {
+        method: 'POST',
+        headers: { ...this.defaultHeaders, Accept: 'text/event-stream' },
+        body: JSON.stringify(body),
+        signal
+      });
+    } catch (error) {
+      throw new NetworkError(`Network error: ${error.message}`);
+    }
+    if (!response.ok) {
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        data = { error: { message: 'Invalid JSON response' } };
+      }
+      throw ApiError.fromResponse(response, data);
+    }
+
+    // A turn can outlive any fixed timeout, so it ends on its `final` event or the caller's signal.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let final = null;
+    const deliver = (block) => {
+      const message = parseSseBlock(block);
+      if (!message) return;
+      if (message.event === 'final') final = message.data;
+      if (typeof onEvent === 'function') onEvent(message.event, message.data);
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      let end;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        deliver(buffer.slice(0, end));
+        buffer = buffer.slice(end + 2);
+      }
+    }
+    if (buffer.trim()) deliver(buffer);
+    if (!final) throw new NetworkError('The agent turn ended before its final event.');
+    return final;
+  }
+
+  /**
+   * Your credits and spend, readable without opening Proofable: the balance, recent spend
+   * events, and a summary by line (`byMode`) and by UTC day (`debitedByDay`).
+   *
+   * @param {object} [options]
+   * @param {string} [options.from]   first UTC day of the period, YYYY-MM-DD
+   * @param {string} [options.to]     last UTC day of the period, YYYY-MM-DD
+   * @param {string} [options.appId]  only spend recorded under this app or namespace
+   * @param {number} [options.limit]  most events returned, newest first (1-500)
+   * @returns {Promise<{ credits: object|null, usage: { events: object[], summary: object } }>}
+   */
+  async getUsage(options = {}) {
+    const { from, to, appId, limit } = options || {};
+    for (const [name, value] of [['from', from], ['to', to]]) {
+      if (value !== undefined && value !== null && !USAGE_DAY_RE.test(String(value))) {
+        throw new ValidationError(`${name} must be a UTC day, YYYY-MM-DD`, name, value);
+      }
+    }
+    const query = new URLSearchParams();
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    if (appId) query.set('appId', String(appId));
+    if (limit !== undefined && limit !== null) query.set('limit', String(limit));
+    const suffix = query.toString() ? `?${query}` : '';
+    const response = await this._makeRequest('GET', `/api/v1/profile/usage${suffix}`);
+    return response?.data ?? null;
   }
 
   async _makeRequest(method, endpoint, data = null, headersOverride = null) {

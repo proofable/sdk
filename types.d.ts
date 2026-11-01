@@ -42,6 +42,12 @@
 
     gateCheck(params: GateCheckApiParams): Promise<GateCheckApiResponse>;
 
+    /** Talk to a hosted agent: one chat turn run as the agent, under the delegation you signed for it. */
+    agentChat(params: AgentChatParams): Promise<AgentChatFinal>;
+
+    /** Your credits and spend: the balance, recent events, and spend by line and by UTC day. */
+    getUsage(options?: UsageOptions): Promise<UsageResult | null>;
+
     createGatePrivateAuth(params: {
       address: string;
       wallet?: WalletLike;
@@ -710,6 +716,85 @@
     missing: GateRequirement[];
     existing: Record<string, any>;
     allProofs: any[];
+  }
+
+  export interface AgentChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+  }
+
+  export interface AgentChatParams {
+    /** The conversation; the last message is from the user. */
+    messages: AgentChatMessage[];
+    /** Run as this agent; omit to run as yourself. */
+    agentId?: string;
+    /** The agent's account, when two of your agents share an agentId. */
+    agentWallet?: string;
+    /** Context from your app, passed to the agent as data. */
+    systemPrompt?: string;
+    /** 'default' (the default) or 'advanced'; with `provider`, that provider's model id. */
+    model?: string;
+    /** Run on your own model key instead of hosted inference. */
+    provider?: string;
+    providerSecretProofQHash?: string;
+    responseMode?: 'agent' | 'plan';
+    turnId?: string;
+    /** Every streamed event as it arrives: turn.start, answer.delta, tool.start, tool.result, final, … */
+    onEvent?: (type: string, data: Record<string, unknown>) => void;
+    signal?: AbortSignal;
+  }
+
+  /** A record the agent read; anyone can open it at proofable.me/proof/<qHash>. */
+  export interface AgentChatCitation {
+    qHash: string;
+    title: string | null;
+    facet: string | null;
+    visibility: 'public' | 'private' | null;
+  }
+
+  /** The turn's `final` event. */
+  export interface AgentChatFinal {
+    turnId: string;
+    outcome: 'succeeded' | 'failed' | 'blocked' | 'canceled' | 'incomplete';
+    answer: string;
+    citations: AgentChatCitation[];
+    agent?: { agentId: string; agentWallet: string; identityQHash: string | null; delegationQHash: string | null };
+    credits?: { spent: number };
+    usage: Record<string, number> | null;
+    model: string | null;
+    provider: string | null;
+    toolActivity: Array<Record<string, unknown>> | null;
+    error?: { code: string; message: string; retryable: boolean };
+    [key: string]: unknown;
+  }
+
+  export interface UsageOptions {
+    /** First UTC day of the period, YYYY-MM-DD. */
+    from?: string;
+    /** Last UTC day of the period, YYYY-MM-DD. */
+    to?: string;
+    appId?: string;
+    limit?: number;
+  }
+
+  export interface UsageResult {
+    orgWallet: string;
+    profileId: string | null;
+    credits: { remaining?: number; allowance?: number; [key: string]: unknown } | null;
+    usage: {
+      limit: number;
+      from?: string;
+      to?: string;
+      events: Array<Record<string, unknown>>;
+      summary: {
+        count: number;
+        requiredCredits: number;
+        debitedCredits: number;
+        byMode: Record<string, number>;
+        byStatus: Record<string, number>;
+        debitedByDay: Record<string, number>;
+      };
+    };
   }
 
   export interface GateCheckApiParams {

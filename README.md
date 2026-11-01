@@ -45,6 +45,28 @@ Paste this into Claude Code, Cursor or Codex.
 Set up Proofable for this project. Run `npx -y @proofable/sdk setup`. Then run `npx -y @proofable/sdk auth --oauth` and wait for me to sign in through the browser. Then run `npx -y @proofable/sdk import . --apply <host>`, replacing <host> with claude, cursor or codex to match the tool you run in. Show me what the agent may do and its page link.
 ```
 
+## Talk to your agent from anywhere
+
+Your agent runs on Proofable, so any app, server or runtime can talk to it with one call. Nothing to deploy. It answers as itself, inside the limits you signed, and cites the records it read.
+
+```js
+import { ProofableClient } from '@proofable/sdk';
+
+const client = new ProofableClient({ apiKey: process.env.PROOFABLE_ACCESS_KEY });
+
+const turn = await client.agentChat({
+  agentId: 'my-agent',
+  messages: [{ role: 'user', content: 'Summarize this week for the client.' }],
+  onEvent: (type, data) => type === 'answer.delta' && process.stdout.write(data.text),
+});
+
+turn.answer;     // the agent's answer
+turn.citations;  // the records it read: { qHash, title, facet, visibility }
+turn.credits;    // what the turn spent
+```
+
+An action the agent's permission does not allow is refused before it runs, in every runtime that calls it. Revoke the permission once and the next call stops. Read your spend any time with `client.getUsage({ from: '2026-11-01' })`.
+
 ## Add a check to your app
 
 Verify someone once, then reuse that proof on every later check.
@@ -147,6 +169,8 @@ A terminal that is not signed in gets a browser link instead.
 | `client.createWalletLinkData()` | Wallet-link payloads |
 | `client.getVerifiers()` | List live verifier ids |
 | `client.getVerifierCatalog()` | Full verifier catalog with access levels |
+| `client.agentChat()` | Talk to a hosted agent: one turn, run as the agent, with citations |
+| `client.getUsage()` | Your credits and spend, by line and by day |
 | `client.isHealthy()` | Ping the API health endpoint |
 
 ```js
