@@ -9,6 +9,8 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-11-01
+
 ### Added
 
 - **`client.agentChat()` talks to a hosted agent from any app or runtime.** Name the agent and send the conversation; the turn runs on Proofable as that agent, under the delegation you signed for it, with every tool call checked before it runs. Events stream to `onEvent`, and the call resolves with the answer, the records the agent read as `citations`, and the credits it spent. Nothing to deploy.
