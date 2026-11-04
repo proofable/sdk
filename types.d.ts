@@ -42,8 +42,20 @@
 
     gateCheck(params: GateCheckApiParams): Promise<GateCheckApiResponse>;
 
-    /** Talk to a hosted agent: one chat turn run as the agent, under the delegation you signed for it. */
+    /**
+     * Talk to a hosted agent: one chat turn run as the agent, under the delegation you signed for it.
+     * With `agentWallet`, someone else's public agent runs in your own profile, with nothing of its owner's in the conversation.
+     */
     agentChat(params: AgentChatParams): Promise<AgentChatFinal>;
+
+    /** Who this client is signed in as; `authenticated` is false with no credential. */
+    me(): Promise<ProofableMe>;
+
+    /**
+     * Let your app sponsor usage: your users' checks and their chats with your agents are billed to
+     * your organization within a daily credit cap. One signed record on your account.
+     */
+    sponsorApp(params: SponsorAppParams): Promise<SponsorAppResult>;
 
     /** Your credits and spend: the balance, recent events, and spend by line and by UTC day. */
     getUsage(options?: UsageOptions): Promise<UsageResult | null>;
@@ -69,7 +81,10 @@
 
   export interface ProofableClientConfig {
     apiUrl?: string;
-    /** Optional server profile key; MCP/CI only. Not required for VerifyGate or gateCheck. */
+    /**
+     * The credential sent as a Bearer token: a profile access key on a server, or a person's
+     * access token from `ProofableSignIn`. Not required for VerifyGate or gateCheck.
+     */
     apiKey?: string;
     /** Public app attribution id (non-secret). */
     appId?: string;
@@ -99,6 +114,8 @@
     verifierIds?: string[];
     targetChains?: number[];
     origin?: string;
+    /** What the app sponsors: its users' checks (the default) or their chats with the owner's agents. */
+    scope?: 'sponsored-verification' | 'agent-chat';
     expiresInSeconds?: number;
   }
 
@@ -111,6 +128,86 @@
   }
 
   export function fetchSponsorGrant(params: FetchSponsorGrantParams): Promise<FetchSponsorGrantResult>;
+
+  export interface SponsorAppParams {
+    /** Your app's id: letters, digits, ".", "_", ":" or "-". */
+    appId: string;
+    /** The https origin your app calls from. */
+    origin: string;
+    /** The most credits the app may spend in a UTC day. */
+    creditsPerDay: number;
+    /** What the app sponsors; both by default. */
+    scopes?: Array<'sponsored-verification' | 'agent-chat'>;
+  }
+
+  export interface SponsorAppResult {
+    qHash: string;
+    appId: string;
+    origin: string;
+    creditsPerDay: number;
+    scopes: string[];
+  }
+
+  /** The signed-in profile, as `client.me()` returns it. */
+  export interface ProofableMe {
+    authenticated: boolean;
+    address?: string;
+    primaryAccount?: string;
+    handle?: string;
+    profileSummary?: Record<string, unknown>;
+    [key: string]: unknown;
+  }
+
+  export interface ProofableSignInOptions {
+    /** Where Proofable sends the person back: an https URL on your site. */
+    redirectUri: string;
+    /** The client id `register()` gave you. Omit it and `start()` registers once per instance. */
+    clientId?: string;
+    scope?: string;
+    issuer?: string;
+    resource?: string;
+    fetchImpl?: typeof fetch;
+  }
+
+  export interface ProofableSignInStart {
+    /** Send the person here. */
+    url: string;
+    state: string;
+    /** Keep it until the person is back, then pass it to `finish()`. */
+    verifier: string;
+    clientId: string;
+  }
+
+  export interface ProofableTokens {
+    accessToken: string;
+    refreshToken: string | null;
+    tokenType: string;
+    expiresIn: number | null;
+    expiresAt: number | null;
+    scope: string;
+  }
+
+  /**
+   * Sign your app's users in with Proofable: the same sign-in every MCP host uses, for your
+   * own web app. Then act as the person with `new ProofableClient({ apiKey: tokens.accessToken })`.
+   */
+  export class ProofableSignIn {
+    constructor(options: ProofableSignInOptions);
+    redirectUri: string;
+    clientId: string | null;
+    /** Register your callback once and keep the client id. */
+    register(): Promise<string>;
+    /** Where to send the person, with the values to keep until they are back. */
+    start(options?: { state?: string }): Promise<ProofableSignInStart>;
+    /** Exchange the callback's code for the person's tokens. */
+    finish(input: { code: string; verifier: string; state?: string; expectedState?: string; iss?: string }): Promise<ProofableTokens>;
+    /** New tokens from a refresh token; the old one is spent. */
+    refresh(refreshToken: string): Promise<ProofableTokens>;
+  }
+
+  export const PROOFABLE_SIGN_IN_ISSUER: string;
+  export const PROOFABLE_SIGN_IN_RESOURCE: string;
+  export const PROOFABLE_SIGN_IN_SCOPE: string;
 
   export interface VerificationOptions {
     privacyLevel?: PrivacyLevel;
@@ -728,7 +825,10 @@
     messages: AgentChatMessage[];
     /** Run as this agent; omit to run as yourself. */
     agentId?: string;
-    /** The agent's account, when two of your agents share an agentId. */
+    /**
+     * The agent's account: when two of your agents share an agentId, or to talk to someone
+     * else's public agent, which then runs in your own profile, with nothing of its owner's in the conversation.
+     */
     agentWallet?: string;
     /** Context from your app, passed to the agent as data. */
     systemPrompt?: string;
@@ -1667,6 +1767,7 @@ declare module '@proofable/sdk/sponsor' {
     verifierIds?: string[];
     targetChains?: number[];
     origin?: string;
+    scope?: 'sponsored-verification' | 'agent-chat';
     expiresInSeconds?: number;
     fetchImpl?: typeof fetch;
   }): Promise<{
@@ -1676,6 +1777,10 @@ declare module '@proofable/sdk/sponsor' {
     appId: string;
     maxCredits?: number;
   }>;
+}
+
+declare module '@proofable/sdk/sign-in' {
+  export { ProofableSignIn, ProofableSignInOptions, ProofableSignInStart, ProofableTokens, PROOFABLE_SIGN_IN_ISSUER, PROOFABLE_SIGN_IN_RESOURCE, PROOFABLE_SIGN_IN_SCOPE } from '@proofable/sdk';
 }
 
 declare module '@proofable/sdk/brand-mark' {

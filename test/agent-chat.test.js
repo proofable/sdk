@@ -51,6 +51,26 @@ describe('ProofableClient.agentChat', () => {
     expect(JSON.parse(init.body)).toEqual({ agentId: 'human-alignment', messages: [{ role: 'user', content: 'How does the book open?' }] });
   });
 
+  it('sends the app\'s sponsor grant for a chat when the client bills the app', async () => {
+    const fetch = vi.fn(async (url) => {
+      if (String(url).endsWith('/api/v1/sponsor/grant')) {
+        return new Response(JSON.stringify({ success: true, data: { sponsorGrant: 'grant-1', exp: Math.floor(Date.now() / 1000) + 900, orgWallet: `0x${'3'.repeat(40)}`, appId: 'everyone' } }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return sseResponse([event(1, 'final', { turnId: 't3', outcome: 'succeeded', answer: 'Hi.', citations: [] })]);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const client = new ProofableClient({ apiKey: 'at-ada', appId: 'everyone', billingWallet: `0x${'3'.repeat(40)}`, appOrigin: 'https://everyone.team' });
+    await client.agentChat({ agentId: 'human-alignment', agentWallet: `0x${'3'.repeat(40)}`, messages: [{ role: 'user', content: 'hi' }] });
+    await client.agentChat({ agentId: 'human-alignment', agentWallet: `0x${'3'.repeat(40)}`, messages: [{ role: 'user', content: 'again' }] });
+    const grantCalls = fetch.mock.calls.filter(([url]) => String(url).endsWith('/api/v1/sponsor/grant'));
+    // A grant is accepted once, so every turn takes its own.
+    expect(grantCalls).toHaveLength(2);
+    expect(JSON.parse(grantCalls[0][1].body)).toMatchObject({ scope: 'agent-chat', orgWallet: `0x${'3'.repeat(40)}` });
+    expect(grantCalls[0][1].headers).toMatchObject({ Origin: 'https://everyone.team', 'X-Client-Origin': 'https://everyone.team' });
+    const turnCall = fetch.mock.calls.find(([url]) => String(url).endsWith('/api/v1/agent/chat/turn'));
+    expect(turnCall[1].headers).toMatchObject({ Authorization: 'Bearer at-ada', 'X-Sponsor-Grant': 'grant-1', Origin: 'https://everyone.team' });
+  });
+
   it('raises a refusal before the stream as an ApiError with its code', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       success: false,
@@ -71,6 +91,23 @@ describe('ProofableClient.agentChat', () => {
   it('needs a conversation', async () => {
     const client = new ProofableClient({ apiKey: 'npk_test' });
     await expect(client.agentChat({ agentId: 'x', messages: [] })).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+describe('ProofableClient.me', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('says who the credential belongs to', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      success: true,
+      data: { authenticated: true, address: `0x${'3'.repeat(40)}`, handle: 'ada', profileSummary: { displayName: 'Ada Lovelace' } }
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetch);
+    const client = new ProofableClient({ apiKey: 'at-1' });
+    expect(await client.me()).toMatchObject({ authenticated: true, handle: 'ada', profileSummary: { displayName: 'Ada Lovelace' } });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.proofable.me/api/v1/auth/me');
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer at-1' });
   });
 });
 

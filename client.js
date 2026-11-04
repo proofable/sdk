@@ -494,7 +494,7 @@ export class ProofableClient {
     return null;
   }
 
-  async _resolveSponsorGrantHeaders(verifierIds = []) {
+  async _resolveSponsorGrantHeaders(verifierIds = [], { scope = 'sponsored-verification', fresh = false } = {}) {
     const appId = typeof this.config.appId === 'string' ? this.config.appId.trim() : '';
     const orgWallet = this._getBillingWallet();
     if (!appId || !orgWallet) {
@@ -504,9 +504,11 @@ export class ProofableClient {
     const normalizedVerifierIds = Array.isArray(verifierIds)
       ? verifierIds.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 25)
       : [];
-    const cacheKey = `${appId}:${orgWallet}:${normalizedVerifierIds.join(',')}`;
+    const cacheKey = `${appId}:${orgWallet}:${scope}:${normalizedVerifierIds.join(',')}`;
     const now = Date.now();
+    // A grant is accepted once. A call that must carry its own takes a fresh one every time.
     if (
+      !fresh &&
       this._sponsorGrantCache &&
       this._sponsorGrantCache.key === cacheKey &&
       this._sponsorGrantCache.expMs > now + 30_000
@@ -520,6 +522,7 @@ export class ProofableClient {
       appId,
       orgWallet,
       verifierIds: normalizedVerifierIds,
+      scope,
       origin
     });
 
@@ -2111,6 +2114,11 @@ export class ProofableClient {
    * Authenticate the client with a server key (`apiKey`) on a server, or a signed-in
    * session token in a browser. Never ship a server key in browser code.
    *
+   * Who pays: the signed-in account, unless the client carries `appId` and `billingWallet`.
+   * Then it sends your app's sponsor grant with the turn and your organization pays, within
+   * the daily cap you set with `sponsorApp()`, with the spend recorded under the app. That is
+   * how an app pays for its users' chats with your agent.
+   *
    * @param {object} params
    * @param {Array<{ role: 'user'|'assistant', content: string }>} params.messages  the last one from the user
    * @param {string} [params.agentId]       run as this agent; omit to run as yourself
@@ -2129,11 +2137,12 @@ export class ProofableClient {
     if (!Array.isArray(body.messages) || body.messages.length === 0) {
       throw new ValidationError('messages must be a non-empty array, the last one from the user', 'messages', body.messages);
     }
+    const sponsorHeaders = await this._resolveSponsorGrantHeaders([], { scope: 'agent-chat', fresh: true });
     let response;
     try {
       response = await fetch(`${this.baseUrl}/api/v1/agent/chat/turn`, {
         method: 'POST',
-        headers: { ...this.defaultHeaders, Accept: 'text/event-stream' },
+        headers: { ...this.defaultHeaders, ...sponsorHeaders, Accept: 'text/event-stream' },
         body: JSON.stringify(body),
         signal
       });
@@ -2174,6 +2183,85 @@ export class ProofableClient {
     if (buffer.trim()) deliver(buffer);
     if (!final) throw new NetworkError('The agent turn ended before its final event.');
     return final;
+  }
+
+  /**
+   * Let your app sponsor usage: the checks your users run and the chats they have with your
+   * agents are billed to your organization, within a daily credit cap, and recorded under the
+   * app. One signed record on your account, made with your own access key or sign-in; after
+   * it, a client built with `appId` and `billingWallet` carries your sponsorship on every call.
+   *
+   * @param {object} params
+   * @param {string} params.appId          your app's id, letters, digits, `.`, `_`, `:` or `-`
+   * @param {string} params.origin         the https origin your app calls from
+   * @param {number} params.creditsPerDay  the most credits the app may spend in a UTC day
+   * @param {Array<'sponsored-verification'|'agent-chat'>} [params.scopes]  what it sponsors; both by default
+   * @returns {Promise<{ qHash: string, appId: string, origin: string, creditsPerDay: number, scopes: string[] }>}
+   */
+  async sponsorApp(params = {}) {
+    const appId = String(params.appId || '').trim();
+    if (!/^[a-zA-Z0-9._:-]{1,64}$/.test(appId)) {
+      throw new ValidationError('appId must be 1-64 characters of letters, digits, ".", "_", ":" or "-"', 'appId', params.appId);
+    }
+    let origin;
+    try {
+      const url = new URL(String(params.origin || '').trim());
+      if (url.protocol !== 'https:') throw new Error('https');
+      origin = url.origin;
+    } catch {
+      throw new ValidationError('origin must be the https origin your app calls from', 'origin', params.origin);
+    }
+    const creditsPerDay = Number(params.creditsPerDay);
+    if (!Number.isInteger(creditsPerDay) || creditsPerDay < 1 || creditsPerDay > 999_999_999) {
+      throw new ValidationError('creditsPerDay must be a whole number of credits', 'creditsPerDay', params.creditsPerDay);
+    }
+    const allowed = ['sponsored-verification', 'agent-chat'];
+    const scopes = Array.isArray(params.scopes) && params.scopes.length > 0
+      ? [...new Set(params.scopes.map((s) => String(s || '').trim().toLowerCase()))]
+      : allowed;
+    const unknown = scopes.find((s) => !allowed.includes(s));
+    if (unknown) throw new ValidationError(`scopes may hold only ${allowed.join(' and ')}`, 'scopes', params.scopes);
+
+    const issuer = await this._makeRequest('GET', '/api/v1/sponsor/issuer-address');
+    const issuerAddress = String(issuer?.issuerAddress || issuer?.data?.issuerAddress || '').trim().toLowerCase();
+    if (!EVM_ADDRESS_RE.test(issuerAddress)) {
+      throw new ApiError('Proofable did not return its sponsorship issuer', 502, 'SPONSOR_ISSUER_UNAVAILABLE', issuer);
+    }
+    const me = await this.me();
+    const owner = String(me?.primaryAccount || me?.address || '').trim().toLowerCase();
+    if (!EVM_ADDRESS_RE.test(owner)) {
+      throw new ValidationError('Sign the client in with your own access key or sign-in before sponsoring an app', 'apiKey', null);
+    }
+    const response = await this._makeRequest('POST', '/api/v1/verification', {
+      walletAddress: owner,
+      verifierIds: ['agent-delegation'],
+      data: {
+        controllerWallet: owner,
+        agentWallet: issuerAddress,
+        agentId: `sponsor-${appId}`,
+        scope: 'sponsor-grants',
+        allowedActions: ['read_context'],
+        permissions: [`app:${appId}`, `origin:${origin}`, `cap:creditsPerDay=${creditsPerDay}`, `scopes:${scopes.join(',')}`]
+      },
+      signedTimestamp: Date.now(),
+      options: { privacyLevel: 'private' }
+    });
+    const qHash = String(response?.data?.qHash || response?.qHash || '');
+    if (!response?.success || !qHash) {
+      throw new ApiError(`Sponsorship could not be recorded: ${response?.error?.message || 'unknown error'}`, 502, 'SPONSOR_SETUP_FAILED', response);
+    }
+    return { qHash, appId, origin, creditsPerDay, scopes };
+  }
+
+  /**
+   * Who this client is signed in as: the profile behind the access key or the person's token
+   * from `ProofableSignIn`. `authenticated` is false for a client with no credential.
+   *
+   * @returns {Promise<{ authenticated: boolean, address?: string, primaryAccount?: string, handle?: string, profileSummary?: Record<string, unknown>, [key: string]: unknown }>}
+   */
+  async me() {
+    const response = await this._makeRequest('GET', '/api/v1/auth/me');
+    return response?.data ?? { authenticated: false };
   }
 
   /**

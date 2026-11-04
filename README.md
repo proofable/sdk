@@ -67,6 +67,50 @@ turn.credits;    // what the turn spent
 
 An action the agent's permission does not allow is refused before it runs, in every runtime that calls it. Revoke the permission once and the next call stops. Read your spend any time with `client.getUsage({ from: '2026-11-01' })`.
 
+## Let your app's users talk to your agent
+
+Sign your users in with Proofable, then make the same call as them. Each person talks to your public agent inside their own Proofable profile: their records, and nothing of yours in the conversation. Your agent's instructions and the records you made public are what it knows.
+
+```js
+import { ProofableClient, ProofableSignIn } from '@proofable/sdk';
+
+// clientId: what register() returned the first time, kept with your app's settings.
+const signIn = new ProofableSignIn({ redirectUri: 'https://your.app/proofable/callback', clientId: settings.proofableClientId });
+
+// 1. Send the person to Proofable. Keep `state` and `verifier` for when they come back (a signed cookie works).
+const started = await signIn.start();
+redirect(started.url);
+
+// 2. They are back at your callback with `code` and `state` in the URL.
+const tokens = await signIn.finish({ code: query.code, verifier: kept.verifier, state: query.state, expectedState: kept.state });
+
+// 3. Act as the person. Your app pays: appId and billingWallet make every turn your organization's spend.
+const person = new ProofableClient({
+  apiKey: tokens.accessToken,
+  appId: 'your-app',
+  billingWallet: '0xYourAccount',
+  appOrigin: 'https://your.app',
+});
+const who = await person.me();                            // { handle, address, ... }
+const turn = await person.agentChat({
+  agentId: 'my-agent',
+  agentWallet: '0xYourAccount',                           // your account: the agent runs in the person's own profile
+  turnId: `u-${yourUserKey}-${Date.now()}`,               // your key for the person; every spend record carries it
+  messages: [{ role: 'user', content: 'Where does the case start?' }],
+  onEvent: (type, data) => type === 'answer.delta' && respond(data.text),
+});
+```
+
+**Sign-in.** `start()` with no `clientId` registers your callback with Proofable and returns the id; store it with your app's settings and pass it on every later instance. Refresh with `signIn.refresh(tokens.refreshToken)` before the token expires.
+
+**Who pays.** Your app does. Turn it on once, signed in as yourself:
+
+```bash
+npx -y @proofable/sdk sponsor --app your-app --origin https://your.app --credits-per-day 2000
+```
+
+From then on a client built with `appId` and `billingWallet` carries your sponsorship: your organization pays for your users' checks and their chats with your agents, within the daily cap you set, and every spend record names your app and your `turnId`, so you can set your own limits per person. Without `appId` and `billingWallet`, each person spends their own credits. A record the agent keeps for a person is the person's own and costs one credit from their own allowance, which every account has. In code, the same step is `client.sponsorApp({ appId, origin, creditsPerDay })`.
+
 ## Add a check to your app
 
 Verify someone once, then reuse that proof on every later check.

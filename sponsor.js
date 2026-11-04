@@ -1,8 +1,10 @@
 import { ValidationError, ApiError, NetworkError } from './errors.js';
 
 /**
- * Request short-lived billing authorization so verification usage bills the app owner.
- * Requires a completed app registration (`sponsor-grants` delegation) on orgWallet.
+ * A short-lived grant that bills your app's usage to the app's owner: checks its users run
+ * (`sponsored-verification`, the default) or chats its users have with the owner's agents
+ * (`agent-chat`). The owner turns sponsorship on once with `client.sponsorApp()` or
+ * `proofable sponsor`. A grant is accepted once; fetch one per call that carries it.
  */
 export async function fetchSponsorGrant(params = {}) {
   const {
@@ -12,9 +14,11 @@ export async function fetchSponsorGrant(params = {}) {
     verifierIds = [],
     targetChains = [],
     origin,
+    scope = 'sponsored-verification',
     expiresInSeconds = 900,
     fetchImpl = fetch
   } = params;
+  const normalizedScope = scope === 'agent-chat' ? 'agent-chat' : 'sponsored-verification';
 
   const normalizedAppId = typeof appId === 'string' ? appId.trim() : '';
   const normalizedOrg = typeof orgWallet === 'string' ? orgWallet.trim().toLowerCase() : '';
@@ -43,12 +47,14 @@ export async function fetchSponsorGrant(params = {}) {
     'X-Neus-Sdk': 'js'
   };
   if (typeof origin === 'string' && origin.trim()) {
+    // Both: a runtime that will not send Origin still names the app's origin.
     headers.Origin = origin.trim();
+    headers['X-Client-Origin'] = origin.trim();
   }
 
   const body = {
     orgWallet: normalizedOrg,
-    scope: 'sponsored-verification',
+    scope: normalizedScope,
     expiresInSeconds,
     ...(Array.isArray(verifierIds) && verifierIds.length > 0
       ? { verifierIds: verifierIds.map((v) => String(v).trim()).filter(Boolean).slice(0, 25) }
