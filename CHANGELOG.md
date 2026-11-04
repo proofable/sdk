@@ -9,6 +9,14 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-11-04
+
+### Added
+
+- **Your app's users can talk to your agent.** `ProofableSignIn` signs them in with Proofable, the same sign-in every MCP host uses: `start()` sends the person to Proofable, `finish()` exchanges the code for their tokens, `refresh()` renews them, and `register()` records your callback once. Then `client.agentChat({ agentId, agentWallet })` as the person runs your public agent inside their own profile: their records, and nothing of yours in the conversation.
+- **Your app pays for those chats.** `client.sponsorApp()` and `proofable sponsor` turn sponsorship on once: your app may spend up to a daily cap of your credits on its users' checks and chats. A client with `appId` and `billingWallet` then carries it, and every spend record names the app. `fetchSponsorGrant` takes `scope: 'agent-chat'`.
+- **`client.me()`** says who the credential belongs to.
+
 ## [0.1.11] - 2026-11-01
 
 ### Added
@@ -192,7 +200,8 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 | [1.1.0](https://www.npmjs.com/package/@neus/sdk/v/1.1.0) | 2026-05-26 | First public SDK release on npm: OAuth-first setup, the CLI, public MCP tools including encrypted Vault secrets, and the Claude Code plugin with the trust workflow skill. |
 | [1.0.12](https://www.npmjs.com/package/@neus/sdk/v/1.0.12) | 2026-05-26 | First `@neus/sdk` release with the hosted MCP CLI (`neus setup`, `neus auth`, import/export) and the OAuth browser flow. |
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/proofable/sdk/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/proofable/sdk/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/proofable/sdk/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/proofable/sdk/compare/v0.1.8...v0.1.9

@@ -66,6 +66,13 @@ export {
 export { fetchSponsorGrant } from './sponsor.js';
 
 export {
+  ProofableSignIn,
+  PROOFABLE_SIGN_IN_ISSUER,
+  PROOFABLE_SIGN_IN_RESOURCE,
+  PROOFABLE_SIGN_IN_SCOPE
+} from './sign-in.js';
+
+export {
   RUNTIME_MOUNT_SCHEMA,
   normalizeWallet,
   normalizeQHash,

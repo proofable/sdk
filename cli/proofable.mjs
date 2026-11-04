@@ -1004,11 +1004,21 @@ function parseArgs(argv) {
     expiresAt: '',
     gateCommand: '',
     subject: '',
-    gateTarget: ''
+    gateTarget: '',
+    app: '',
+    origin: '',
+    creditsPerDay: ''
   };
 
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token === '--app' || token === '--origin' || token === '--credits-per-day') {
+      const value = argv[index + 1];
+      if (!value) throw new Error(`${token} requires a value`);
+      options[token === '--app' ? 'app' : token === '--origin' ? 'origin' : 'creditsPerDay'] = value.trim();
+      index += 1;
+      continue;
+    }
     if (token === '--json') {
       options.json = true;
       continue;
@@ -1122,6 +1132,7 @@ function printUsage(exitCode = 0) {
     '  import <src>  Create an agent from a repo (URL or owner/name), folder, MCP URL, or agent card, then mount it',
     '  gate check <file> --subject <id>   Check a Gate Policy file against a subject',
     '  gate get <gateId>                  Read a published gate snapshot',
+    '  sponsor --app <id> --origin <https://…> --credits-per-day <n>   Let your app pay for its users\' checks and chats with your agents',
     '  help          Show this message',
     '',
     'Options:',
@@ -3158,6 +3169,35 @@ async function runDisconnect(options) {
   }
 }
 
+/**
+ * `proofable sponsor --app <id> --origin <https://…> --credits-per-day <n>`: one signed record on your
+ * account that lets your app pay for its users' checks and their chats with your agents, up to the
+ * daily cap. Signs in the way `doctor --live` does: --access-key, the installed key, or the CLI store.
+ */
+async function runSponsor(options) {
+  const usage = 'Usage: proofable sponsor --app <id> --origin <https://your.app> --credits-per-day <n> [--json]';
+  if (!options.app || !options.origin || !options.creditsPerDay) throw new Error(usage);
+  const scope = resolveScope(options);
+  const credential = resolveLiveCredential(options, scope, process.cwd());
+  if (!credential?.key) {
+    throw new Error('Sign in first: `proofable auth --oauth`, or pass --access-key with your own profile access key.');
+  }
+  const { ProofableClient } = await import('../client.js');
+  const client = new ProofableClient({ apiKey: credential.key });
+  const result = await client.sponsorApp({
+    appId: options.app,
+    origin: options.origin,
+    creditsPerDay: Number(options.creditsPerDay)
+  });
+  if (options.json) {
+    printJson({ command: 'sponsor', ...result });
+    return;
+  }
+  logStep('ok', 'sponsor', `${result.appId} at ${result.origin} may spend up to ${result.creditsPerDay} credits a day on its users' checks and chats`);
+  logStep('next', 'build', `new ProofableClient({ apiKey, appId: '${result.appId}', billingWallet: '<your account>', appOrigin: '${result.origin}' })`);
+  logStep('info', 'record', `https://proofable.me/proof/${result.qHash}`);
+}
+
 async function runGate(options) {
   const sub = String(options.gateCommand || '').trim().toLowerCase();
   if (sub !== 'check' && sub !== 'get') {
@@ -3274,6 +3314,10 @@ async function main() {
     }
     if (command === 'gate') {
       await runGate(options);
+      return;
+    }
+    if (command === 'sponsor') {
+      await runSponsor(options);
       return;
     }
 

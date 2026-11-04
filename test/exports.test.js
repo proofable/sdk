@@ -12,5 +12,6 @@ describe('package exports', () => {
     expect(Index.getHostedAgentCreateUrl).toBeTypeOf('function');
     expect(Index.computePortableProofQHash).toBeTypeOf('function');
     expect(Index.verifyPortableProofEnvelope).toBeTypeOf('function');
+    expect(Index.ProofableSignIn).toBeTypeOf('function');
   });
 });
