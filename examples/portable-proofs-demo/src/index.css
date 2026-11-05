@@ -1,4 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
+
+/* Geist Serif (SIL OFL 1.1) is not on Google Fonts, so the body voice is self-hosted. */
+@font-face {
+  font-family: 'Geist Serif';
+  src: url('/fonts/GeistSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -22,6 +31,7 @@
     --proofable-text-secondary: rgba(255, 255, 255, 0.9);
     --proofable-text-muted: rgba(255, 255, 255, 0.76);
     --proofable-font-secondary: "Geist", sans-serif;
+    --proofable-font-body: "Geist Serif", serif;
     --proofable-font-mono: "Geist", monospace;
     --proofable-accent: rgb(var(--proofable-rgb-accent-primary) / 1);
     --proofable-accent-dim: rgb(var(--proofable-rgb-accent-primary-dim) / 1);
@@ -51,7 +61,7 @@
 
   :root,
   body {
-    @apply min-h-screen font-body antialiased;
+    @apply min-h-screen font-sans antialiased;
     font-family: var(--proofable-font-secondary);
     font-feature-settings: 'ss01' on, 'cv01' on;
     color: var(--proofable-text-primary);

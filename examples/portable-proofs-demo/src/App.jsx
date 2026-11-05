@@ -124,7 +124,7 @@ export default function App() {
   );
 
   return (
-    <div className="flex min-h-screen bg-bg font-body text-text-p selection:bg-primary/20">
+    <div className="flex min-h-screen bg-bg font-sans text-text-p selection:bg-primary/20">
       <aside
         className="z-40 flex w-[min(100vw,220px)] flex-shrink-0 flex-col p-6 sm:w-[220px]"
         style={{ borderRight: '1px solid var(--proofable-border-subtle)', background: 'var(--proofable-bg-rail)' }}
@@ -208,7 +208,7 @@ export default function App() {
             <h1 className="mb-1.5 text-[1.6rem] font-semibold leading-tight tracking-tight sm:text-[1.875rem]">
               Marketplace
             </h1>
-            <p className="max-w-xl text-[0.9375rem] leading-relaxed" style={{ color: 'var(--proofable-text-secondary)' }}>
+            <p className="font-body max-w-xl text-[0.9375rem] leading-relaxed" style={{ color: 'var(--proofable-text-secondary)' }}>
               One proof for access, rewards, and agents. Works in the browser, on the server, and anywhere you need to show trust.
             </p>
           </div>

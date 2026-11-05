@@ -57,7 +57,7 @@ export const OpportunityCard = forwardRef(function OpportunityCard(
         <h3 className="mb-1.5 text-lg font-semibold leading-tight tracking-tight text-[var(--proofable-text-primary)]">
           {c.title}
         </h3>
-        <p className="mb-5 text-[0.875rem] leading-relaxed text-[var(--proofable-text-secondary)] line-clamp-2">
+        <p className="font-body mb-5 text-[0.875rem] leading-relaxed text-[var(--proofable-text-secondary)] line-clamp-2">
           {explanation}
         </p>
 

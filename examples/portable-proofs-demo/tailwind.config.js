@@ -9,8 +9,10 @@ export default {
   theme: {
     extend: {
       fontFamily: {
+        sans: ['Geist', 'sans-serif'],
         display: ['Geist', 'sans-serif'],
-        body: ['Geist', 'sans-serif']
+        // The body voice. Prose sets here; titles, controls, code and data stay `sans`.
+        body: ['Geist Serif', 'serif']
       },
       boxShadow: {
         card: '0 10px 28px rgba(0,0,0,0.28), 0 1px 0 rgba(90,90,90,0.12), inset 0 1px 0 rgba(90,90,90,0.1)',

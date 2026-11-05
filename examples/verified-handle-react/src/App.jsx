@@ -49,9 +49,9 @@ export default function App() {
   }
 
   return (
-    <main style={{ fontFamily: 'system-ui', padding: 24, maxWidth: 520 }}>
+    <main style={{ fontFamily: "'Geist', sans-serif", padding: 24, maxWidth: 520 }}>
       <h1>Claim your ACME handle</h1>
-      <p>Bind your handle to your wallet and get a Proofable Proof Receipt.</p>
+      <p style={{ fontFamily: "'Geist Serif', serif" }}>Bind your handle to your wallet and get a Proofable Proof Receipt.</p>
 
       <label>
         Handle

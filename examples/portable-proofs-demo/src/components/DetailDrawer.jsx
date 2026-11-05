@@ -118,7 +118,7 @@ export function DetailDrawer({ claim, onClose, apiUrl, hostedCheckoutUrl, qHash,
         <p className="mb-1.5 m-0 text-[0.65rem] font-bold uppercase tracking-wider" style={{ color: 'var(--proofable-text-muted)' }}>
           Why it matters
         </p>
-        <p className="m-0 text-sm leading-relaxed" style={{ color: 'var(--proofable-text-secondary)' }}>
+        <p className="font-body m-0 text-sm leading-relaxed" style={{ color: 'var(--proofable-text-secondary)' }}>
           {claim.whyItMatters}
         </p>
       </div>
