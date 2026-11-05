@@ -69,7 +69,7 @@ An action the agent's permission does not allow is refused before it runs, in ev
 
 ## Let your app's users talk to your agent
 
-Sign your users in with Proofable, then make the same call as them. Each person talks to your public agent inside their own Proofable profile: their records, and nothing of yours in the conversation. Your agent's instructions and the records you made public are what it knows.
+Sign your users in with Proofable, then make the same call as them. Each person talks to your public agent inside their own Proofable profile, with their records and nothing of yours in the conversation. Your agent's instructions and the records you made public are what it knows.
 
 ```js
 import { ProofableClient, ProofableSignIn } from '@proofable/sdk';
@@ -109,7 +109,7 @@ const turn = await person.agentChat({
 npx -y @proofable/sdk sponsor --app your-app --origin https://your.app --credits-per-day 2000
 ```
 
-From then on a client built with `appId` and `billingWallet` carries your sponsorship: your organization pays for your users' checks and their chats with your agents, within the daily cap you set, and every spend record names your app and your `turnId`, so you can set your own limits per person. Without `appId` and `billingWallet`, each person spends their own credits. A record the agent keeps for a person is the person's own and costs one credit from their own allowance, which every account has. In code, the same step is `client.sponsorApp({ appId, origin, creditsPerDay })`.
+From then on a client built with `appId` and `billingWallet` carries your sponsorship. Your organization pays for your users' checks and their chats with your agents, within the daily cap you set, and every spend record names your app and your `turnId`, so you can set your own limits per person. Without `appId` and `billingWallet`, each person spends their own credits. A record the agent keeps for a person is the person's own and costs one credit from their own allowance, which every account has. In code, the same step is `client.sponsorApp({ appId, origin, creditsPerDay })`.
 
 ## Add a check to your app
 

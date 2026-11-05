@@ -13,8 +13,8 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ### Added
 
-- **Your app's users can talk to your agent.** `ProofableSignIn` signs them in with Proofable, the same sign-in every MCP host uses: `start()` sends the person to Proofable, `finish()` exchanges the code for their tokens, `refresh()` renews them, and `register()` records your callback once. Then `client.agentChat({ agentId, agentWallet })` as the person runs your public agent inside their own profile: their records, and nothing of yours in the conversation.
-- **Your app pays for those chats.** `client.sponsorApp()` and `proofable sponsor` turn sponsorship on once: your app may spend up to a daily cap of your credits on its users' checks and chats. A client with `appId` and `billingWallet` then carries it, and every spend record names the app. `fetchSponsorGrant` takes `scope: 'agent-chat'`.
+- **Your app's users can talk to your agent.** `ProofableSignIn` signs them in with Proofable, the same sign-in every MCP host uses. `start()` sends the person to Proofable, `finish()` exchanges the code for their tokens, `refresh()` renews them, and `register()` records your callback once. Then `client.agentChat({ agentId, agentWallet })` as the person runs your public agent inside their own profile, with their records and nothing of yours in the conversation.
+- **Your app pays for those chats.** `client.sponsorApp()` and `proofable sponsor` turn sponsorship on once. Your app may then spend up to a daily cap of your credits on its users' checks and chats. A client with `appId` and `billingWallet` carries it, and every spend record names the app. `fetchSponsorGrant` takes `scope: 'agent-chat'`.
 - **`client.me()`** says who the credential belongs to.
 
 ## [0.1.11] - 2026-11-01
@@ -175,7 +175,7 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 
 | Release | Date | What it changed for a builder |
 | --- | --- | --- |
-| [1.3.9](https://www.npmjs.com/package/@neus/sdk/v/1.3.9) | 2026-08-13 | Removed the OAuth browser command-injection sink: the CLI opens authorization URLs with fixed executables, never a shell command. Retired the `neus import` / `neus export` / `neus revoke` alias paths. The CLI defers skill install when the plugin already bundles the trust workflow. |
+| [1.3.9](https://www.npmjs.com/package/@neus/sdk/v/1.3.9) | 2026-08-13 | Removed the OAuth browser command-injection sink. The CLI opens authorization URLs with fixed executables, never a shell command. Retired the `neus import` / `neus export` / `neus revoke` alias paths. The CLI defers skill install when the plugin already bundles the trust workflow. |
 | [1.3.8](https://www.npmjs.com/package/@neus/sdk/v/1.3.8) | 2026-07-30 | Added RFC 9207 issuer validation in `neus setup` and `neus auth`, preventing authorization-code interception. Rebalanced per-host setup guidance and removed the retired `neus-trust` plugin probe. |
 | [1.3.7](https://www.npmjs.com/package/@neus/sdk/v/1.3.7) | 2026-07-30 | Restored marketplace click-install for Cursor and normalized the RFC 8707 `resource` parameter so canonicalizing clients stop failing with `invalid_target`. |
 | [1.3.6](https://www.npmjs.com/package/@neus/sdk/v/1.3.6) | 2026-07-30 | The `neus-mcp` plugin became the MCP registration owner in Cursor while the CLI defers, ending duplicate entries. The trust-workflow skill moved into the package as its single home. |

@@ -45,7 +45,7 @@ Show what my agents are allowed to do.
 
 The agent lives on the signed-in profile by default. Ask for a dedicated spend account only when the agent should pay from its own account. Open **Connections** on proofable.me to link apps.
 
-Already running an agent? Bring it as it is: a GitHub repository, an MCP server URL, an A2A agent card, or a package. Secrets stay out of the import.
+Already running an agent? Import it as it is from a GitHub repository, an MCP server URL, an A2A agent card, or a package. Secrets stay out of the import.
 
 ```bash
 proofable import <repository, URL, or folder>
