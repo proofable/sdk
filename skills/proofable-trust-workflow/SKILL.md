@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires a client that supports remote HTTP MCP servers and hosted OAuth.
 metadata:
   author: Proofable
-  version: "0.1.9"
+  version: "0.1.10"
   homepage: https://docs.proofable.me/mcp/setup
 ---
 
@@ -45,6 +45,8 @@ Proofable: Blocked. A required trust condition was not satisfied. Next: Do not c
 ## Hard rules
 
 - **Ownership is decided once, before the first write.** `agent_create` is idempotent per agentId but not per controller: repeating it with a different `controllerWallet` mints a second identity proof instead of updating the first, so one agentId ends up holding two active identities and mount and dispatch read the newest. If the owner is already right, stop. There is no agent-delete tool; revoking the `agent-identity` and `agent-delegation` proofs is how an agent created on the wrong account is removed, and the ids already quoted to the user then point at revoked records, so say so.
+- **Re-creating an agent replaces its record, it does not edit it.** `agent_create` mints a new identity proof for the agentId; the platform tags the prior one `superseded-by` and mount and dispatch read the newest. Any field left out of the call is absent from the new record, so pass the whole record back: label, description, capabilities, instructions and skills. A new identity also orphans a delegation signed against the old one, so the delegation may need re-issuing by the controller before the agent reads as linked.
+- **A declared skill resolves only from a proof on the wallet the agent runs on.** The `skills[]` on the identity is a declaration. The text resolves from a proof tagged `skill:<exact id>` held by that wallet, so an agent can declare nine skills and resolve none. `_workspace/tools/agent-skill-sync.mjs` reports the gap per wallet and `--apply` mints what is missing.
 - **An action the agent does not need is an action it does not get.** Grant through the explicit allowed list. A preset list is replaced, not extended, so an action left out of the allowed list is denied no matter what the denied list says, and an action removed from the denied list is not thereby granted.
 - Proofs stay off the chain unless the user asks for a blockchain record. Do not prompt for a wallet otherwise.
 - Use proof IDs only from tool responses. Say "proof ID" or "portable proof" in user text.
