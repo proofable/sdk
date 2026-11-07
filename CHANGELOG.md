@@ -9,6 +9,10 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+### Changed
+
+- **Packaged skills match MCP 0.1.10.** The trust workflow stops on an unclear requirement, covers who owns an agent and what re-creating one does, and lists and removes saved keys without offering a tool to store one.
+
 ## [0.1.12] - 2026-11-04
 
 ### Added
