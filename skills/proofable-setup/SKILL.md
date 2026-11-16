@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires an MCP-capable client that can register a remote HTTP server.
 metadata:
   author: Proofable
-  version: "0.1.10"
+  version: "0.1.11"
   homepage: https://docs.proofable.me/mcp/setup
 ---
 
@@ -20,7 +20,7 @@ If the client offers the Proofable plugin, install it instead of adding the URL 
 With the Proofable CLI:
 
 ```bash
-proofable setup
+npx -y @proofable/sdk setup
 ```
 
 After sign-in, ask:

@@ -9,6 +9,17 @@ Product release notes: [docs.proofable.me/changelog](https://docs.proofable.me/c
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-11-16
+
+### Changed
+
+- **Packaged skills match MCP 0.1.11.** The trust workflow hands an agent work as a job and revokes proofs and permissions. Keys are saved on the profile page, with no tool to list or remove them.
+
+### Fixed
+
+- **`CLAUDE_PLUGIN_INSTALL` works on a fresh Claude Code.** It adds the `proofable/mcp` marketplace before installing the plugin.
+- **`proofable examples` suggests prompts that work over MCP.** Handing your agent a job replaces the vault prompt.
+
 ## [0.1.13] - 2026-11-11
 
 ### Changed
@@ -206,7 +217,8 @@ The `@proofable/sdk` package continues the line published as `@neus/sdk`. The no
 | [1.1.0](https://www.npmjs.com/package/@neus/sdk/v/1.1.0) | 2026-05-26 | First public SDK release on npm: OAuth-first setup, the CLI, public MCP tools including encrypted Vault secrets, and the Claude Code plugin with the trust workflow skill. |
 | [1.0.12](https://www.npmjs.com/package/@neus/sdk/v/1.0.12) | 2026-05-26 | First `@neus/sdk` release with the hosted MCP CLI (`neus setup`, `neus auth`, import/export) and the OAuth browser flow. |
 
-[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/proofable/sdk/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/proofable/sdk/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/proofable/sdk/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/proofable/sdk/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/proofable/sdk/compare/v0.1.10...v0.1.11

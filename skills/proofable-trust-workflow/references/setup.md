@@ -15,13 +15,13 @@ If the client shows no sign-in, run its own MCP login command after the URL is r
 With the Proofable CLI:
 
 ```bash
-proofable setup
+npx -y @proofable/sdk setup
 ```
 
 Servers and CI:
 
 ```bash
-proofable setup --access-key <npk_...>
+npx -y @proofable/sdk setup --access-key <npk_...>
 ```
 
 Create access keys under **Account → Access keys** on [proofable.me](https://proofable.me/profile?tab=account). Never paste keys into chat or committed files.
@@ -42,4 +42,4 @@ proofable mount <agentId> --apply <host>
 | **Project** | `proofable mount <agentId> --apply <host>` |
 | **Session** | `proofable_context` → `proofable_agent_mount` when acting as the agent |
 
-Use `proofable mount` only when acting as a registered profile agent. For proofs and secrets, a completed sign-in plus `proofable_context` is enough.
+Use `proofable mount` only when acting as a registered profile agent. For proofs and jobs, a completed sign-in plus `proofable_context` is enough.

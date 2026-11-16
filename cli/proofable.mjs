@@ -2836,7 +2836,7 @@ const ASSISTANT_EXAMPLE_PROMPTS = [
   'Check whether I already have the required proof.',
   'Verify this agent is trusted before it runs tools.',
   'Connect my Proofable agent context, then follow its scoped policy.',
-  'Use Proofable Vault to store or revoke secrets.',
+  'Hand this task to my agent as a job and show me the result.',
   'Show the proof for this verification.'
 ];
 
