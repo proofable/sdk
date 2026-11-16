@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLAUDE_PLUGIN_INSTALL,
   MCP_INSTALL_SHORTCUT_HOSTS,
   PROOFABLE_MCP_URL,
   buildAuthCommandForClient,
@@ -121,6 +122,12 @@ describe('mcp-hosts', () => {
       'proofable setup --client codex --access-key npk_x'
     );
     expect(buildSetupCliCommandForHost('cursor')).not.toContain('npx');
+  });
+
+  it('adds the marketplace before installing the Claude Code plugin', () => {
+    expect(CLAUDE_PLUGIN_INSTALL).toBe(
+      '/plugin marketplace add proofable/mcp\n/plugin install proofable-mcp@proofable'
+    );
   });
 
   it('builds Cursor install links with transport-only config', () => {

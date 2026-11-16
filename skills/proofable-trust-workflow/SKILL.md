@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires a client that supports remote HTTP MCP servers and hosted OAuth.
 metadata:
   author: Proofable
-  version: "0.1.10"
+  version: "0.1.11"
   homepage: https://docs.proofable.me/mcp/setup
 ---
 
@@ -30,7 +30,7 @@ Do not proceed on an assumption. When the requirement, the owner, or the accepta
 3. **Trust before action:** call **`proofable_verify_or_guide`** directly, before creating any new proof. It reuses a qualifying proof or returns the next secure step. Use **`proofable_proofs_check`** only for an explicit yes/no eligibility, gate, or access question, never for memory, context, or content retrieval. When signed in, ownership checks continue with **`proofable_verify`**. For another signer, prepare with **`proofable_verify_prepare`** and submit with **`proofable_verify_submit`**. Share a browser link only when a tool returns one.
 4. **Agent:** **`proofable_agent_link`**. If the agent already runs elsewhere (a repository, MCP server URL, A2A agent card, or package), import it with `proofable import <source>`. If missing, **`proofable_agent_create`** (a dedicated account needs a key you create and hold; pass only its public address). Then **`proofable_agent_mount`**. Decide `agentWallet` and `controllerWallet` before the first call. A company's agent belongs to the company's wallet, never to a person's wallet. Re-read with **`proofable_agent_link`**, and only schedule work once **`proofable_context`** shows that agentId with `delegationActive: true` and `execute_jobs` allowed.
 5. **Proofs and context:** read the `proofable_context` context index first, then **`proofable_proofs_get`** with a known proof ID and `include=content` for an exact body.
-6. **Saved keys:** list them with **`proofable_secret_list`** and remove one with **`proofable_secret_revoke`**. A key is saved on the profile in Proofable, never through a tool.
+6. **Work:** hand it to the agent with **`proofable_job_create`**, follow it with **`proofable_job_get`**, and approve or deny a waiting run with **`proofable_job_decide`**. Revoke a proof or an agent permission with **`proofable_proof_revoke`**. Keys are saved on the profile in Proofable, never through a tool.
 
 ## Proofable format
 

@@ -258,7 +258,7 @@ export function buildSetupNpxOneLiner(client) {
 }
 
 /** Claude Code marketplace plugin. Cursor/Codex use their own plugin UIs. */
-export const CLAUDE_PLUGIN_INSTALL = '/plugin install proofable-mcp@proofable';
+export const CLAUDE_PLUGIN_INSTALL = '/plugin marketplace add proofable/mcp\n/plugin install proofable-mcp@proofable';
 
 function encodeJsonBase64(value) {
   const json = JSON.stringify(value);
