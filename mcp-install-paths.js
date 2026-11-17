@@ -52,6 +52,7 @@ export const MCP_AUTH_OWNERS = ['host', 'manual', 'none'];
  * @property {boolean} pluginSupport Whether the client accepts a plugin bundle.
  * @property {string}  markKey       Key into the official brand-mark registry.
  * @property {string}  docsUrl       Vendor documentation for the add-server step.
+ * @property {string}  [addUrl]      The client's own page where the server is added, when it has one.
  */
 
 /** @type {ReadonlyArray<McpInstallPath>} */
@@ -155,7 +156,10 @@ export const MCP_INSTALL_PATHS = [
     tier: 2,
     installClass: 'url',
     deeplinkKind: null,
-    afterInstall: 'Turn on developer mode, add the connection, and sign in when ChatGPT asks.',
+    // Not in the ChatGPT plugin directory: the person adds it as a custom MCP server
+    // on ChatGPT's Plugins page (addUrl), then ChatGPT runs the sign-in.
+    afterInstall: 'In Plugins, select +, then Add custom MCP server. Paste the address, create it as a plugin, and sign in when ChatGPT asks.',
+    addUrl: 'https://chatgpt.com/plugins',
     authOwner: 'host',
     connectLabel: null,
     pluginSupport: true,
