@@ -17,7 +17,7 @@
  * - `command`: a CLI or config write registers the server (Codex, Gemini CLI,
  *   Warp, OpenClaw, Hermes, Cline, JetBrains).
  * - `url`: paste the endpoint into a settings UI; the host runs its own
- *   sign-in (ChatGPT, Claude web/Desktop connectors, Zed, n8n).
+ *   sign-in (Claude web/Desktop connectors, Zed, n8n).
  */
 export const MCP_INSTALL_CLASSES = ['deeplink', 'plugin', 'command', 'url'];
 
@@ -95,8 +95,9 @@ export const MCP_INSTALL_PATHS = [
     tier: 1,
     installClass: 'plugin',
     deeplinkKind: null,
-    // Sign-in in Claude Code is completed via the `/mcp` slash command.
-    afterInstall: 'Installs the Proofable skills. Add the server, then run /mcp and sign in.',
+    // The plugin carries the server and the skills; adding the server again
+    // creates a duplicate connection. Sign-in runs from the `/mcp` slash command.
+    afterInstall: 'Installs the server and skills. Run /mcp, select Proofable and sign in.',
     authOwner: 'host',
     connectLabel: null,
     pluginSupport: true,
@@ -154,12 +155,12 @@ export const MCP_INSTALL_PATHS = [
     label: 'ChatGPT',
     kind: 'web',
     tier: 2,
-    installClass: 'url',
+    installClass: 'plugin',
     deeplinkKind: null,
-    // Not in the ChatGPT plugin directory: the person adds it as a custom MCP server
-    // on ChatGPT's Plugins page (addUrl), then ChatGPT runs the sign-in.
-    afterInstall: 'In Plugins, select +, then Add custom MCP server. Paste the address, create it as a plugin, and sign in when ChatGPT asks.',
-    addUrl: 'https://chatgpt.com/plugins',
+    // Listed in the ChatGPT plugin directory (addUrl). The listing renders
+    // "Install plugin", then ChatGPT runs the sign-in.
+    afterInstall: 'Select Install plugin, then sign in when ChatGPT asks.',
+    addUrl: 'https://chatgpt.com/plugins/plugin_asdk_app_6ae65c2bac0881918812c63246c7e6c9',
     authOwner: 'host',
     connectLabel: null,
     pluginSupport: true,
