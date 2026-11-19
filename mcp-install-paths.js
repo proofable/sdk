@@ -110,6 +110,14 @@ export const MCP_INSTALL_PATHS = [
     // the strip, so it carries the Claude mark; the registry states the same
     // rule for the hero stack.
     markKey: 'claude',
+    // Claude's own install link prefills the Add-custom-connector dialog with the
+    // name and the server URL; the person still reviews and confirms, so nothing
+    // is granted that they did not see. Documented at
+    // https://claude.com/docs/connectors/building/directory-vs-custom
+    addUrl: 'https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Proofable&connectorUrl=https%3A%2F%2Fmcp.proofable.me%2Fmcp',
+    // The row's own label carries "(connectors)" to separate it from Claude Code
+    // in the docs and the CLI. Beside an add button the word is noise.
+    addLabel: 'Claude',
     docsUrl: 'https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors'
   },
   {
