@@ -67,26 +67,12 @@ export const MCP_INSTALL_PATHS = [
     // Cursor has no Connect button. The deeplink registers the server; the user
     // enables it in Customize and Cursor runs OAuth itself.
     afterInstall: 'Turn Proofable on in Customize. Cursor opens the sign-in.',
+    addUrl: 'https://cursor.com/en/install-mcp?name=proofable&config=eyJ1cmwiOiJodHRwczovL21jcC5wcm9vZmFibGUubWUvbWNwIn0%3D',
     authOwner: 'host',
     connectLabel: null,
     pluginSupport: true,
     markKey: 'cursor',
     docsUrl: 'https://cursor.com/docs/context/mcp/install-links'
-  },
-  {
-    id: 'vscode',
-    label: 'VS Code',
-    kind: 'ide',
-    tier: 1,
-    installClass: 'deeplink',
-    deeplinkKind: 'vscode',
-    // No Connect button. The server appears in the MCP list and must be started.
-    afterInstall: 'Start it from “MCP: List Servers”. VS Code opens the sign-in.',
-    authOwner: 'host',
-    connectLabel: null,
-    pluginSupport: true,
-    markKey: 'vscode',
-    docsUrl: 'https://code.visualstudio.com/docs/copilot/customization/mcp-servers'
   },
   {
     id: 'claude-code',
@@ -114,6 +100,8 @@ export const MCP_INSTALL_PATHS = [
     // The one client where "Connect" is the real button label. Owners add the
     // connector once for the whole organization; members then authenticate.
     afterInstall: 'Add the connector, then click Connect to sign in.',
+    addUrl: 'https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Proofable&connectorUrl=https%3A%2F%2Fmcp.proofable.me%2Fmcp',
+    addLabel: 'Claude',
     authOwner: 'host',
     connectLabel: 'Connect',
     pluginSupport: true,
@@ -154,7 +142,9 @@ export const MCP_INSTALL_PATHS = [
     id: 'chatgpt',
     label: 'ChatGPT',
     kind: 'web',
-    tier: 2,
+    // First-class: its plugin listing is a real one-click add, so it belongs in
+    // the curated set the marketing surfaces show, not only in the long tail.
+    tier: 1,
     installClass: 'plugin',
     deeplinkKind: null,
     // Listed in the ChatGPT plugin directory (addUrl). The listing renders
@@ -166,6 +156,41 @@ export const MCP_INSTALL_PATHS = [
     pluginSupport: true,
     markKey: 'openai',
     docsUrl: 'https://developers.openai.com/plugins/deploy/connect-chatgpt'
+  },
+  {
+    id: 'grokbot',
+    label: 'Grok',
+    kind: 'web',
+    tier: 1,
+    installClass: 'url',
+    deeplinkKind: null,
+    // grok.com/connectors takes a remote MCP server by URL: New Connector, then
+    // Custom, then paste the address, then the host runs its own sign-in. Grok
+    // Bot takes the same server by asking the Bot to add it, so both surfaces
+    // are covered by the one row.
+    afterInstall: 'New Connector, then Custom, then paste the address and sign in.',
+    addUrl: 'https://grok.com/connectors',
+    authOwner: 'host',
+    connectLabel: null,
+    pluginSupport: false,
+    markKey: 'grokbot',
+    docsUrl: 'https://docs.x.ai/grok/connectors'
+  },
+  {
+    id: 'vscode',
+    label: 'VS Code',
+    kind: 'ide',
+    tier: 1,
+    installClass: 'deeplink',
+    deeplinkKind: 'vscode',
+    // No Connect button. The server appears in the MCP list and must be started.
+    afterInstall: 'Start it from “MCP: List Servers”. VS Code opens the sign-in.',
+    addUrl: 'https://vscode.dev/redirect/mcp/install?name=proofable&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.proofable.me%2Fmcp%22%7D',
+    authOwner: 'host',
+    connectLabel: null,
+    pluginSupport: true,
+    markKey: 'vscode',
+    docsUrl: 'https://code.visualstudio.com/docs/copilot/customization/mcp-servers'
   },
   {
     id: 'gemini-cli',

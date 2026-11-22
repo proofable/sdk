@@ -72,12 +72,19 @@ describe('MCP install-path table', () => {
   });
 
   it('splits first-class clients from the long tail without dropping any', () => {
+    // The first-class set is the curated one-click row the marketing surfaces
+    // show. ChatGPT and Grok joined it (2026-11-22): both take the server
+    // without a CLI step, ChatGPT through its plugin listing and Grok through
+    // grok.com/connectors. VS Code moved later in the list so the AI clients
+    // lead the strip, which is the order a reader scans.
     expect(MCP_PRIMARY_CLIENT_IDS).toEqual([
       'cursor',
-      'vscode',
       'claude-code',
       'claude-connectors',
-      'devin'
+      'devin',
+      'chatgpt',
+      'grokbot',
+      'vscode'
     ]);
     expect(MCP_PRIMARY_CLIENT_IDS.length + MCP_SECONDARY_CLIENT_IDS.length).toBe(
       MCP_INSTALL_PATHS.length
