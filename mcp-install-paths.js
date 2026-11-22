@@ -105,7 +105,11 @@ export const MCP_INSTALL_PATHS = [
     authOwner: 'host',
     connectLabel: 'Connect',
     pluginSupport: true,
-    markKey: 'anthropic',
+    // The Claude mark, not the Anthropic wordmark: Anthropic is the company and
+    // Claude is the client a reader connects. This row is labelled "Claude" in
+    // the strip, so it carries the Claude mark; the registry states the same
+    // rule for the hero stack.
+    markKey: 'claude',
     docsUrl: 'https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors'
   },
   {
