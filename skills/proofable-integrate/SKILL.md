@@ -91,7 +91,7 @@ if (!result.satisfied) {
 }
 ```
 
-For server-only apps or CI, use a server key with `new ProofableClient({ apiKey: 'npk_...' })`. Create keys at proofable.me → profile → Account → Access keys. Never paste keys into chat or committed files.
+For server-only apps or CI, use a server key with `new ProofableClient({ apiKey: 'npk_...' })`. Create keys at proofable.me, in your profile under Account, then Access keys. Never paste keys into chat or committed files.
 
 ## Test
 

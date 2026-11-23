@@ -24,7 +24,7 @@ Servers and CI:
 npx -y @proofable/sdk setup --access-key <npk_...>
 ```
 
-Create access keys under **Account → Access keys** on [proofable.me](https://proofable.me/profile?tab=account). Never paste keys into chat or committed files.
+Create access keys under **Access keys**, in your account on [proofable.me](https://proofable.me/profile?tab=account). Never paste keys into chat or committed files.
 
 After sign-in, call `proofable_context` once and reuse a current proof before starting another verification. Full guide: https://docs.proofable.me/mcp/setup
 
@@ -40,6 +40,6 @@ proofable mount <agentId> --apply <host>
 |-------|-----|
 | **Machine** | Plugin, install link, or URL-only MCP config. CLI optional. |
 | **Project** | `proofable mount <agentId> --apply <host>` |
-| **Session** | `proofable_context` → `proofable_agent_mount` when acting as the agent |
+| **Session** | `proofable_context`, then `proofable_agent_mount`, when acting as the agent |
 
 Use `proofable mount` only when acting as a registered profile agent. For proofs and jobs, a completed sign-in plus `proofable_context` is enough.
