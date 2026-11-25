@@ -71,7 +71,7 @@ const result = await client.gateCheck({
 Publish a listing only when you want a persisted `gateId`, price, or schedule.
 
 1. Sign in at proofable.me.
-2. Open your profile, then Listings.
+2. Open Listings on your profile.
 3. Choose the checks visitors must pass.
 4. Set pricing: you pay by default, or charge visitors.
 5. Publish and copy the `gateId`.

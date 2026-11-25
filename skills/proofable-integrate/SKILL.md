@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires @proofable/sdk (npm).
 metadata:
   author: Proofable
-  version: "0.1.11"
+  version: "0.1.12"
   homepage: https://docs.proofable.me/use-cases/gate-access
 ---
 
@@ -91,7 +91,7 @@ if (!result.satisfied) {
 }
 ```
 
-For server-only apps or CI, use a server key with `new ProofableClient({ apiKey: 'npk_...' })`. Create keys at proofable.me, in your profile under Account, then Access keys. Never paste keys into chat or committed files.
+For server-only apps or CI, use a server key with `new ProofableClient({ apiKey: 'npk_...' })`. Create keys under Access keys on the Account tab of your proofable.me profile. Never paste keys into chat or committed files.
 
 ## Test
 
