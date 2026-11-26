@@ -41,7 +41,7 @@ Its permissions never expire unless you pass `--expires-at <date>`.
 
 **Or let your coding agent do it**
 
-Paste this into Claude Code, Cursor or Codex.
+Paste this into the AI tool you already use.
 
 ```text
 Set up Proofable for this project. Run `npx -y @proofable/sdk setup`. Then run `npx -y @proofable/sdk auth --oauth` and wait for me to sign in through the browser. Then run `npx -y @proofable/sdk import . --apply <host>`, replacing <host> with claude, cursor or codex to match the tool you run in. Show me what the agent may do and its page link.

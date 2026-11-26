@@ -4,7 +4,7 @@ The CAIP-380 specification is released under [CC0 1.0 Universal](https://creativ
 
 [`minimal-evm.json`](./minimal-evm.json) is a complete, non-sensitive wallet-signed request envelope for Base Sepolia. It uses a test-only key and contains no live user data.
 
-The fixture sits on Base Sepolia because it is a signed test vector, not because that is where identities live. Sign-in and profile identity for an EVM account are on Base Mainnet, `eip155:8453`.
+The fixture sits on Base Sepolia because it is a signed test vector. Sign-in and profile identity for an EVM account are on Base Mainnet, `eip155:8453`.
 
 [`minimal-solana.json`](./minimal-solana.json) is a second fixture using a non-EVM native signing scheme. Its signature is a placeholder vector for adapter conformance tests. The envelope accepts any CAIP-2 namespace.
 

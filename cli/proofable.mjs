@@ -1136,7 +1136,7 @@ function printUsage(exitCode = 0) {
     '  help          Show this message',
     '',
     'Options:',
-    '  --client <name[,name]>   Limit setup to claude, codex, cursor, or vscode',
+    '  --client <name[,name]>   Limit setup to claude, codex, cursor, or vscode', // language-gate: allow these are --client accepted values, a command enum, not a marketing app list
     '  --project                Write shared project config instead of user config',
     '  --access-key <npk_...>   Override profile access key (else uses PROOFABLE_ACCESS_KEY if set)',
     '  --oauth                  Force browser OAuth (ignore PROOFABLE_ACCESS_KEY in the environment; stores the refresh token that `proofable refresh` uses)',
